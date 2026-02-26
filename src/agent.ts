@@ -25,11 +25,30 @@ export class Agent {
     opts?: { sessionId?: string }
   ): Promise<AgentResult> {
     const memoryContext = this.memory.getContext();
+    const { claude } = this.config;
     const systemPrompt = [
       "You are a helpful AI assistant running as an always-on agent on a cloud server.",
       "You can browse the web, manage files, run commands, and help with research and tasks.",
       "Be concise in your responses — they will be sent via Telegram.",
       "For long outputs, summarize and offer to provide details if needed.",
+      "",
+      "## About You",
+      `- Name: Claude Code Agent`,
+      `- Model: ${claude.model}`,
+      `- Max turns per request: ${claude.maxTurns}`,
+      `- Budget limit: $${claude.maxBudgetUsd} per request`,
+      `- Working directory: ${claude.workDir}`,
+      `- Infrastructure: AWS Lightsail instance, behind Tailscale VPN`,
+      `- Interface: Telegram bot — users interact with you via chat messages`,
+      `- Tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task`,
+      `- Sessions: each user has a persistent conversation session (cleared with /new)`,
+      "",
+      "## Telegram Commands (handled before reaching you)",
+      "- /new — clears session, starts fresh conversation",
+      "- /remember key=value — stores a persistent fact",
+      "- /forget key — removes a stored fact",
+      "- /memories — lists all stored facts",
+      "- /status — shows uptime, active sessions, memory count",
       "",
       memoryContext
         ? `## Persistent Memory\n${memoryContext}`
