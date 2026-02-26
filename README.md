@@ -95,7 +95,13 @@ Authenticate via the URL printed, then verify:
 tailscale ip -4
 ```
 
-You can then close all inbound ports on your cloud firewall except SSH (or use Tailscale SSH and close everything).
+Enable Tailscale SSH so you can connect without managing SSH keys:
+
+```bash
+sudo tailscale set --ssh
+```
+
+You can then close all inbound ports on your cloud firewall (including SSH 22) — access is entirely via Tailscale.
 
 ### 6. Run directly
 
