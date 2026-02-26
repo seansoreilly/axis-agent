@@ -1,6 +1,10 @@
 import cron from "node-cron";
+import { CronExpressionParser } from "cron-parser";
 import type { Agent } from "./agent.js";
 import { info, error as logError } from "./logger.js";
+
+const MAX_TASKS = 20;
+const MIN_INTERVAL_SECONDS = 300; // 5 minutes
 
 export interface ScheduledTask {
   id: string;
@@ -26,6 +30,29 @@ export class Scheduler {
   add(task: ScheduledTask): void {
     if (!cron.validate(task.schedule)) {
       throw new Error(`Invalid cron expression: ${task.schedule}`);
+    }
+
+    // Enforce minimum interval
+    try {
+      const interval = CronExpressionParser.parse(task.schedule);
+      const first = interval.next().toDate();
+      const second = interval.next().toDate();
+      const gapSeconds = (second.getTime() - first.getTime()) / 1000;
+      if (gapSeconds < MIN_INTERVAL_SECONDS) {
+        throw new Error(
+          `Schedule interval too frequent (${gapSeconds}s). Minimum is ${MIN_INTERVAL_SECONDS}s.`
+        );
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("too frequent")) {
+        throw err;
+      }
+      // If cron-parser fails but node-cron validated, allow it
+    }
+
+    // Enforce max task count (don't count if replacing existing)
+    if (!this.taskDefs.has(task.id) && this.taskDefs.size >= MAX_TASKS) {
+      throw new Error(`Maximum number of scheduled tasks (${MAX_TASKS}) reached.`);
     }
 
     // Remove existing task with same ID

@@ -38,13 +38,21 @@ export function loadConfig(): Config {
     }
   }
 
+  const allowedUsers = (process.env["TELEGRAM_ALLOWED_USERS"] ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map(Number);
+
+  if (allowedUsers.length === 0) {
+    throw new Error(
+      "TELEGRAM_ALLOWED_USERS must be set (comma-separated Telegram user IDs)"
+    );
+  }
+
   return {
     telegram: {
       botToken: requireEnv("TELEGRAM_BOT_TOKEN"),
-      allowedUsers: (process.env["TELEGRAM_ALLOWED_USERS"] ?? "")
-        .split(",")
-        .filter(Boolean)
-        .map(Number),
+      allowedUsers,
     },
     server: {
       port: Number(process.env["PORT"] ?? "8080"),

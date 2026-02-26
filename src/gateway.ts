@@ -21,7 +21,7 @@ export async function createGateway(
   agent: Agent,
   scheduler: Scheduler
 ): Promise<ReturnType<typeof Fastify>> {
-  const app = Fastify();
+  const app = Fastify({ bodyLimit: 10_240 });
 
   app.get("/health", async () => ({
     status: "ok",
@@ -80,7 +80,7 @@ export async function createGateway(
     return { ok: true };
   });
 
-  await app.listen({ port, host: "0.0.0.0" });
+  await app.listen({ port, host: "127.0.0.1" });
   info("gateway", `Listening on port ${port}`);
 
   return app;

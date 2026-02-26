@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SSH_KEY="$HOME/.ssh/claude-code-agent-key.pem"
-REMOTE_HOST="ubuntu@REDACTED_SERVER_IP"
+REMOTE_HOST="${DEPLOY_HOST:-ubuntu@claude-code-agent}"
 REMOTE_DIR="/home/ubuntu/agent"
 
 echo "Building locally..."

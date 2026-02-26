@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Config } from "./config.js";
 import type { Memory } from "./memory.js";
+import { error as logError } from "./logger.js";
 
 export interface AgentResult {
   text: string;
@@ -107,7 +108,8 @@ export class Agent {
       }
     } catch (error) {
       isError = true;
-      resultText = `Agent error: ${error instanceof Error ? error.message : String(error)}`;
+      logError("agent", `Run failed: ${error instanceof Error ? error.message : String(error)}`);
+      resultText = "An internal error occurred. Please try again.";
     }
 
     return {

@@ -40,7 +40,7 @@ export class TelegramIntegration {
   }
 
   private isAuthorized(userId: number): boolean {
-    if (this.allowedUsers.size === 0) return true;
+    if (this.allowedUsers.size === 0) return false;
     return this.allowedUsers.has(userId);
   }
 

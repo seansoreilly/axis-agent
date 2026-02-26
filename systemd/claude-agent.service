@@ -13,5 +13,15 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
+# Security hardening
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/agent /home/ubuntu/.claude /home/ubuntu/.config
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+
 [Install]
 WantedBy=multi-user.target
