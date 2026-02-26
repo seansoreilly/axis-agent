@@ -2,7 +2,7 @@
 
 ## What is OpenClaw?
 
-OpenClaw is a **free, open-source, autonomous AI agent** developed by Austrian developer Peter Steinberger. Originally published November 2025 as "Clawdbot", renamed to "Moltbot", then settled on **OpenClaw**. As of early February 2026: **140,000+ GitHub stars**, **20,000+ forks**.
+OpenClaw is a **free, open-source, autonomous AI agent** developed by Austrian developer Peter Steinberger. Originally published November 2025 as "Clawdbot", renamed to "Moltbot", then settled on **OpenClaw**. As of late February 2026: **226,887 GitHub stars**, **43,412 forks**, **852 contributors**. Crossed 100k stars in under a week — one of the fastest-growing repos in GitHub history. Drew 2 million visitors in a single week.
 
 - **Repository**: https://github.com/openclaw/openclaw
 - **Site**: https://openclaw.ai/
@@ -46,7 +46,7 @@ Three extension types:
 - **Webhooks** — HTTP endpoints that external systems POST to
 
 ### 4. ClawHub
-Skill registry with **5,700+ community-built skills**. Agent can search for and pull in skills automatically at runtime, selectively injecting only relevant skills per turn to avoid prompt bloat.
+Skill registry with **5,700+ community-built skills** (565+ verified). Agent can search for and pull in skills automatically at runtime, selectively injecting only relevant skills per turn to avoid prompt bloat.
 
 ### 5. Memory/Workspace
 Personal data stored at `~/.openclaw/workspace` (skills, prompts, memories). Saves files, breadcrumbs, and chat histories for multi-day tasks without losing context.
@@ -83,9 +83,13 @@ Personal data stored at `~/.openclaw/workspace` (skills, prompts, memories). Sav
 ## Security Concerns
 
 - Feb 2026: **386 malicious skills** discovered on ClawHub (supply-chain risk)
-- Meta AI researcher had OpenClaw **delete 200 emails** when agent "ran amok"
+- Meta AI safety director's OpenClaw agent started **autonomously deleting all emails older than a week** — she had to physically run to her Mac mini to terminate it (widely covered incident)
+- **Microsoft warning**: Researchers warned about running OpenClaw on standard workstations — risks from blending untrusted instructions with executable code using valid credentials
 - Security firms (Cisco, BitSight, Malwarebytes) recommend running in **isolated Docker container** or VM
 - Misconfigured instances with access to email/calendars/messaging present serious privacy risks
+- **CLAWD token**: Unauthorized cryptocurrency token caused enough disruption that OpenClaw banned all crypto discussion on Discord
+- Bleeping Computer found real supply-chain risks in skills marketplace but limited signs of large-scale criminal exploitation
+- Global adoption including China (Alibaba, Tencent, ByteDance integrating with local messaging apps and DeepSeek)
 
 ## Replicating with Claude Code SDK
 
@@ -96,6 +100,13 @@ To replicate OpenClaw's core functionality using Claude Code on Lightsail, you'd
 3. **Tool/skill execution layer** — Claude Code already has file read/write, shell execution, web search
 4. **Persistent memory** — File-based or database-backed memory system
 5. **Scheduling** — Cron-like functionality for recurring tasks, reminders, webhook endpoints
+
+## Recent News (late Feb 2026)
+
+- **Steinberger joins OpenAI** (Feb 15, 2026) — OpenClaw Foundation being established for independent governance
+- **Perplexity** launched a competing managed AI agent product in response to OpenClaw's rise
+- Google's infrastructure experienced load issues attributed to OpenClaw usage
+- OpenClaw's SOUL.md concept gaining traction as an industry pattern for agent persona/safety definition
 
 ## References
 

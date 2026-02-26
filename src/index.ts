@@ -13,18 +13,11 @@ async function main(): Promise<void> {
   const memory = new Memory(config.memoryDir);
   const agent = new Agent(config, memory);
 
-  // Set up Telegram integration
-  const telegram = new TelegramIntegration(
-    config.telegram.botToken,
-    config.telegram.allowedUsers,
-    agent,
-    memory
-  );
-
-  // Set up scheduler with Telegram notifications
+  // Set up scheduler with Telegram notifications (created before telegram so we can pass it)
+  let telegram: TelegramIntegration;
   const primaryUser = config.telegram.allowedUsers[0];
   const scheduler = new Scheduler(agent, (taskId, result) => {
-    if (primaryUser) {
+    if (primaryUser && telegram) {
       telegram
         .sendNotification(primaryUser, `Scheduled task [${taskId}]:\n${result}`)
         .catch((err) => {
@@ -33,6 +26,15 @@ async function main(): Promise<void> {
         });
     }
   });
+
+  // Set up Telegram integration (with scheduler reference)
+  telegram = new TelegramIntegration(
+    config.telegram.botToken,
+    config.telegram.allowedUsers,
+    agent,
+    memory,
+    scheduler
+  );
 
   // Start Telegram bot
   telegram.start();

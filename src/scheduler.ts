@@ -61,21 +61,25 @@ export class Scheduler {
     this.taskDefs.set(task.id, task);
 
     if (task.enabled) {
-      const scheduled = cron.schedule(task.schedule, async () => {
-        info("scheduler", `Running task: ${task.name} (${task.id})`);
-        try {
-          const result = await this.agent.run(task.prompt);
-          info(
-            "scheduler",
-            `Task ${task.id} completed in ${result.durationMs}ms`
-          );
-          this.onResult?.(task.id, result.text);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          logError("scheduler", `Task ${task.id} failed: ${msg}`);
-          this.onResult?.(task.id, `Task failed: ${msg}`);
-        }
-      });
+      const scheduled = cron.schedule(
+        task.schedule,
+        async () => {
+          info("scheduler", `Running task: ${task.name} (${task.id})`);
+          try {
+            const result = await this.agent.run(task.prompt);
+            info(
+              "scheduler",
+              `Task ${task.id} completed in ${result.durationMs}ms`
+            );
+            this.onResult?.(task.id, result.text);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            logError("scheduler", `Task ${task.id} failed: ${msg}`);
+            this.onResult?.(task.id, `Task failed: ${msg}`);
+          }
+        },
+        { timezone: "Australia/Melbourne" }
+      );
       this.tasks.set(task.id, scheduled);
     }
   }
