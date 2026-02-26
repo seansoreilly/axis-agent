@@ -72,13 +72,38 @@ claude auth login
 
 This authenticates with your Max/Pro plan. The Agent SDK inherits this auth — no API key needed.
 
-### 4. Run directly
+### 4. Create required directories
+
+The systemd service uses `ProtectHome=read-only` with explicit write paths. These directories must exist before the service starts:
+
+```bash
+mkdir -p /home/ubuntu/workspace /home/ubuntu/.claude-agent/memory /home/ubuntu/.claude /home/ubuntu/.config
+```
+
+### 5. Install and configure Tailscale (recommended)
+
+The gateway binds to `127.0.0.1` — it is not publicly accessible. Use [Tailscale](https://tailscale.com) to access it remotely:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --hostname=claude-code-agent
+```
+
+Authenticate via the URL printed, then verify:
+
+```bash
+tailscale ip -4
+```
+
+You can then close all inbound ports on your cloud firewall except SSH (or use Tailscale SSH and close everything).
+
+### 6. Run directly
 
 ```bash
 npm start
 ```
 
-### 5. Run as a systemd service (recommended)
+### 7. Run as a systemd service (recommended)
 
 ```bash
 sudo cp systemd/claude-agent.service /etc/systemd/system/
@@ -99,8 +124,8 @@ journalctl -u claude-agent -f
 If developing on a local machine, use `deploy.sh` to rsync and restart on the server:
 
 ```bash
-# Edit deploy.sh to set your SSH key path and server IP
-./deploy.sh
+# Uses Tailscale MagicDNS hostname by default, or override:
+DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh
 ```
 
 ## Usage
@@ -144,6 +169,14 @@ curl -X POST http://localhost:8080/tasks \
 ```
 
 Results are sent to the primary Telegram user as notifications.
+
+## Security
+
+- **Network isolation**: Gateway binds to `127.0.0.1` only — not reachable on public IP. Use Tailscale for remote access.
+- **Telegram auth**: Fail-closed — if `TELEGRAM_ALLOWED_USERS` is empty, the service refuses to start. If set, only listed user IDs can interact.
+- **Systemd sandboxing**: `ProtectHome=read-only`, `ProtectSystem=strict`, `NoNewPrivileges=true`, `PrivateTmp=true`, with explicit `ReadWritePaths` for required directories.
+- **Request limits**: Gateway body size capped at 10KB. Scheduler limited to 20 tasks with minimum 5-minute intervals.
+- **Error sanitization**: Internal errors return generic messages to users; details logged server-side only.
 
 ## Project Structure
 
