@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fetch and parse an iCal feed, returning upcoming events as JSON."""
+import os
 import sys
 import json
 import argparse
@@ -13,7 +14,7 @@ if PACKAGES_PATH not in sys.path:
 
 import icalendar
 
-ICAL_URL = "REDACTED_ICAL_URL"
+ICAL_URL = os.environ.get("ICAL_URL", "")
 TIMEZONE = "Australia/Melbourne"
 
 

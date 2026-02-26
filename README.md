@@ -1,6 +1,6 @@
 # Claude Code Agent
 
-An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview). Receives messages via Telegram, dispatches them to Claude Code, and returns results. General-purpose assistant + task automation (web browsing, file management, research, scheduled tasks).
+An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview). Receives messages via Telegram, dispatches them to Claude Code, and returns results. General-purpose assistant + task automation (web browsing, file management, research, scheduled tasks, calendar integration).
 
 ## Why This Over OpenClaw?
 
@@ -18,6 +18,8 @@ An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.
 
 The key advantage: **if you're already paying for a Claude Max or Pro plan, this agent uses those same tokens at no additional cost.** OpenClaw requires a separate API key with per-token billing.
 
+> **Note:** Anthropic's Max plan is licensed for development and personal use only, not production workloads. If you're deploying for production, use the Anthropic API with per-token billing instead.
+
 ## Architecture
 
 ```
@@ -25,6 +27,37 @@ Telegram --> TelegramIntegration --> Agent (Claude Agent SDK) --> Claude
 HTTP API --> Fastify Gateway --------^
 Cron    --> Scheduler ---------------^
 ```
+
+## Features
+
+### Telegram Bot
+- **Conversational**: persistent sessions per user, with session resume across restarts
+- **Model switching**: `/model opus|sonnet|haiku` to change models per session
+- **Cancel/retry**: `/cancel` aborts a running request, `/retry` re-runs the last prompt
+- **Cost tracking**: `/cost` shows accumulated usage and per-request averages
+- **Media support**: photos (vision), voice messages, and document uploads
+- **Progress indicators**: typing status, ETA based on recent response times, periodic updates
+- **Inline keyboards**: retry and new session buttons on every response
+- **Persistent memory**: `/remember key=value`, `/forget key`, `/memories`
+
+### Scheduled Tasks
+- Create via Telegram (`/schedule add`) or HTTP API
+- Cron-based scheduling with Australia/Melbourne timezone
+- Results sent as Telegram notifications
+- Limits: max 20 tasks, minimum 5-minute interval
+
+### Google Calendar Integration
+- Read events via iCal feed (fast) or Google Calendar API (read/write)
+- Create, update, delete, and search calendar events
+- Requires a Google service account shared with the target calendar
+
+### Self-Modification
+- The agent can edit its own source code and redeploy via `scripts/deploy-self.sh`
+- Use `/sync-from-instance` locally to pull changes back to the repo
+
+### Orchestration
+- Spawns parallel subagents for complex multi-part tasks
+- Chooses model tier per subtask (Opus for reasoning, Sonnet for coding, Haiku for lookups)
 
 ## Installation
 
@@ -62,6 +95,7 @@ CLAUDE_MAX_TURNS=25
 CLAUDE_MAX_BUDGET_USD=5
 CLAUDE_WORK_DIR=/home/ubuntu/workspace
 MEMORY_DIR=/home/ubuntu/.claude-agent/memory
+ICAL_URL=your-ical-feed-url  # optional, for calendar integration
 ```
 
 ### 3. Authenticate Claude Code on the server
@@ -95,7 +129,13 @@ Authenticate via the URL printed, then verify:
 tailscale ip -4
 ```
 
-You can then close all inbound ports on your cloud firewall except SSH (or use Tailscale SSH and close everything).
+Enable Tailscale SSH so you can connect without managing SSH keys:
+
+```bash
+sudo tailscale set --ssh
+```
+
+You can then close all inbound ports on your cloud firewall (including SSH 22) — access is entirely via Tailscale.
 
 ### 6. Run directly
 
@@ -134,12 +174,18 @@ DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh
 
 | Command | Description |
 |---|---|
-| `/start` | Welcome message |
+| `/start` | Welcome message with command list |
 | `/new` | Clear session, start fresh conversation |
-| `/remember key=value` | Store a persistent memory |
-| `/forget key` | Remove a memory |
-| `/memories` | List all memories |
-| `/status` | Show uptime and stats |
+| `/cancel` | Abort the current running request |
+| `/retry` | Re-run the last prompt |
+| `/model [opus\|sonnet\|haiku\|default]` | Switch model for this session |
+| `/cost` | Show accumulated usage costs |
+| `/schedule add\|remove\|enable\|disable` | Manage scheduled tasks |
+| `/tasks` | List all scheduled tasks |
+| `/remember key=value` | Store a persistent fact |
+| `/forget key` | Remove a fact |
+| `/memories` | List all facts |
+| `/status` | Show uptime, sessions, model, cost, tasks |
 
 Any other message is sent to Claude as a prompt. Sessions persist — follow-up messages maintain conversation context.
 
@@ -153,23 +199,6 @@ Any other message is sent to Claude as a prompt. Sessions persist — follow-up 
 | `/tasks` | POST | Create scheduled task (`{ "id", "name", "schedule", "prompt" }`) |
 | `/tasks/:id` | DELETE | Remove scheduled task |
 
-### Scheduled Tasks
-
-Create recurring tasks via the HTTP API:
-
-```bash
-curl -X POST http://localhost:8080/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "daily-summary",
-    "name": "Daily News Summary",
-    "schedule": "0 9 * * *",
-    "prompt": "Search for the top 5 tech news stories today and summarize them"
-  }'
-```
-
-Results are sent to the primary Telegram user as notifications.
-
 ## Security
 
 - **Network isolation**: Gateway binds to `127.0.0.1` only — not reachable on public IP. Use Tailscale for remote access.
@@ -182,17 +211,24 @@ Results are sent to the primary Telegram user as notifications.
 
 ```
 src/
-  index.ts       # Entry point - starts all services
-  config.ts      # Environment config loader
-  agent.ts       # Wraps Claude Agent SDK query() calls
-  gateway.ts     # Fastify HTTP server (webhook + task management)
-  telegram.ts    # Telegram Bot API connector
-  memory.ts      # Persistent file-based memory store
-  scheduler.ts   # Cron-based task scheduling
-  logger.ts      # Structured logging
+  index.ts            # Entry point - starts all services
+  config.ts           # Environment config loader
+  agent.ts            # Wraps Claude Agent SDK query() calls
+  gateway.ts          # Fastify HTTP server (webhook + task management)
+  telegram.ts         # Telegram Bot API connector (commands, media, inline keyboards)
+  telegram.test.ts    # Tests (vitest)
+  memory.ts           # Persistent file-based memory store
+  scheduler.ts        # Cron-based task scheduling
+  logger.ts           # Structured logging
+scripts/
+  remember.js         # CLI for persistent fact CRUD
+  deploy-self.sh      # Self-deploy (runs on the server)
+  daily_briefing.py   # Daily briefing script
+  calendar/           # Google Calendar integration (Python)
 systemd/
-  claude-agent.service  # Systemd unit file
-deploy.sh              # Deploy to remote server
+  claude-agent.service  # Systemd unit file with security hardening
+deploy.sh               # Deploy from local to remote server
+.claude/commands/       # Claude Code slash commands
 ```
 
 ## License

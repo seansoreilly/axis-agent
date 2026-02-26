@@ -106,7 +106,7 @@ export class Agent {
       "  python3 /home/ubuntu/agent/scripts/calendar/calendar_delete.py --event-id ID",
       "  python3 /home/ubuntu/agent/scripts/calendar/calendar_search.py --query 'meeting'",
       "  python3 /home/ubuntu/agent/scripts/calendar/calendar_calendars.py",
-      "  # Service account: REDACTED_SERVICE_ACCOUNT",
+      "  # The calendar must be shared with the Google service account (see .env)",
       "  # To write to user's calendar, that calendar must be shared with the service account",
       "",
       "**When user asks about schedule/calendar/events:** always run ical_fetch.py first for a quick read.",
