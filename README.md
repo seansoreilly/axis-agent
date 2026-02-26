@@ -1,6 +1,22 @@
 # Claude Code Agent
 
-Always-on AI agent powered by the Claude Agent SDK, running on a Lightsail instance. Receives messages via Telegram, dispatches them to Claude Code, and returns results. General-purpose assistant + task automation (web browsing, file management, research, scheduled tasks).
+An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview). Receives messages via Telegram, dispatches them to Claude Code, and returns results. General-purpose assistant + task automation (web browsing, file management, research, scheduled tasks).
+
+## Why This Over OpenClaw?
+
+[OpenClaw](https://github.com/openclaw/openclaw) is a popular open-source AI agent (140k+ stars) that connects to messaging platforms. This project takes a different approach by wrapping Claude Code directly via the Agent SDK:
+
+| | Claude Code Agent | OpenClaw |
+|---|---|---|
+| **Token cost** | Uses your Max/Pro plan tokens (included in subscription) | Requires separate API key billing |
+| **Always up to date** | Inherits Claude Code's tools, models, and capabilities as they ship | Must wait for OpenClaw maintainers to integrate updates |
+| **Tool ecosystem** | Full Claude Code toolset (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task) + MCP servers | Custom skills system (ClawHub — with known supply-chain risks from malicious skills) |
+| **Security** | Anthropic-managed sandboxing, no third-party skill registry | User-managed Docker sandbox recommended; 386 malicious skills found on ClawHub (Feb 2026) |
+| **Complexity** | ~500 lines of TypeScript, single Node.js process | Full Docker Compose stack, 4+ GB RAM recommended |
+| **LLM lock-in** | Claude only | Multi-provider (Claude, GPT, DeepSeek) |
+| **Messaging** | Telegram + HTTP webhook | 10+ platforms (WhatsApp, Slack, Discord, etc.) |
+
+The key advantage: **if you're already paying for a Claude Max or Pro plan, this agent uses those same tokens at no additional cost.** OpenClaw requires a separate API key with per-token billing.
 
 ## Architecture
 
@@ -10,42 +26,86 @@ HTTP API --> Fastify Gateway --------^
 Cron    --> Scheduler ---------------^
 ```
 
-## Instance Details
+## Installation
 
-| Detail | Value |
-|---|---|
-| **Name** | `claude-code-agent` |
-| **Region** | `ap-southeast-2` (Sydney) |
-| **Static IP** | `REDACTED_SERVER_IP` |
-| **OS** | Ubuntu 24.04 LTS |
-| **Size** | 2 CPU, 2GB RAM, 60GB disk ($12/mo) |
-| **Node.js** | v22 |
+### Prerequisites
 
-## Project Structure
+- Node.js 22+
+- A server or VPS (e.g. AWS Lightsail $12/mo)
+- Claude Code CLI installed and authenticated (`npm install -g @anthropic-ai/claude-code && claude`)
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+- Your Telegram user ID from [@userinfobot](https://t.me/userinfobot)
 
-```
-src/
-  index.ts       # Entry point - starts all services
-  agent.ts       # Wraps Claude Agent SDK query() calls
-  gateway.ts     # Fastify HTTP server (webhook + task management)
-  telegram.ts    # Telegram Bot API connector
-  memory.ts      # Persistent file-based memory store
-  scheduler.ts   # Cron-based task scheduling
-  logger.ts      # Structured logging
-  config.ts      # Environment config loader
-systemd/
-  claude-agent.service  # Systemd unit file
-deploy.sh              # Deploy to Lightsail
+### 1. Clone and install
+
+```bash
+git clone https://github.com/seansoreilly/claude-code-agent.git
+cd claude-code-agent
+npm install
+npm run build
 ```
 
-## Setup
+### 2. Configure environment
 
-1. Copy `.env.example` to `.env` and fill in values
-2. `npm install`
-3. `npm run build`
-4. `npm start`
+```bash
+cp .env.example .env
+```
 
-## Telegram Commands
+Edit `.env`:
+
+```bash
+TELEGRAM_BOT_TOKEN=your-token-from-botfather
+TELEGRAM_ALLOWED_USERS=your-numeric-telegram-id
+PORT=8080
+CLAUDE_MODEL=claude-sonnet-4-6
+CLAUDE_MAX_TURNS=25
+CLAUDE_MAX_BUDGET_USD=5
+CLAUDE_WORK_DIR=/home/ubuntu/workspace
+MEMORY_DIR=/home/ubuntu/.claude-agent/memory
+```
+
+### 3. Authenticate Claude Code on the server
+
+```bash
+claude auth login
+```
+
+This authenticates with your Max/Pro plan. The Agent SDK inherits this auth — no API key needed.
+
+### 4. Run directly
+
+```bash
+npm start
+```
+
+### 5. Run as a systemd service (recommended)
+
+```bash
+sudo cp systemd/claude-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable claude-agent
+sudo systemctl start claude-agent
+```
+
+Check status:
+
+```bash
+sudo systemctl status claude-agent
+journalctl -u claude-agent -f
+```
+
+### Deploy updates
+
+If developing on a local machine, use `deploy.sh` to rsync and restart on the server:
+
+```bash
+# Edit deploy.sh to set your SSH key path and server IP
+./deploy.sh
+```
+
+## Usage
+
+### Telegram Commands
 
 | Command | Description |
 |---|---|
@@ -56,9 +116,9 @@ deploy.sh              # Deploy to Lightsail
 | `/memories` | List all memories |
 | `/status` | Show uptime and stats |
 
-Any other message is sent to Claude as a prompt.
+Any other message is sent to Claude as a prompt. Sessions persist — follow-up messages maintain conversation context.
 
-## HTTP API
+### HTTP API
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -68,31 +128,40 @@ Any other message is sent to Claude as a prompt.
 | `/tasks` | POST | Create scheduled task (`{ "id", "name", "schedule", "prompt" }`) |
 | `/tasks/:id` | DELETE | Remove scheduled task |
 
-## Deploy
+### Scheduled Tasks
+
+Create recurring tasks via the HTTP API:
 
 ```bash
-./deploy.sh
+curl -X POST http://localhost:8080/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "daily-summary",
+    "name": "Daily News Summary",
+    "schedule": "0 9 * * *",
+    "prompt": "Search for the top 5 tech news stories today and summarize them"
+  }'
 ```
 
-Syncs code to Lightsail, installs deps, restarts systemd service.
+Results are sent to the primary Telegram user as notifications.
 
-## Connect to Instance
+## Project Structure
 
-```bash
-ssh -i ~/.ssh/claude-code-agent-key.pem ubuntu@REDACTED_SERVER_IP
+```
+src/
+  index.ts       # Entry point - starts all services
+  config.ts      # Environment config loader
+  agent.ts       # Wraps Claude Agent SDK query() calls
+  gateway.ts     # Fastify HTTP server (webhook + task management)
+  telegram.ts    # Telegram Bot API connector
+  memory.ts      # Persistent file-based memory store
+  scheduler.ts   # Cron-based task scheduling
+  logger.ts      # Structured logging
+systemd/
+  claude-agent.service  # Systemd unit file
+deploy.sh              # Deploy to remote server
 ```
 
-## Manage Instance
+## License
 
-```bash
-# Start/Stop
-aws lightsail start-instance --instance-name claude-code-agent --region ap-southeast-2
-aws lightsail stop-instance --instance-name claude-code-agent --region ap-southeast-2
-
-# Status
-aws lightsail get-instance --instance-name claude-code-agent --region ap-southeast-2 \
-  --query "instance.{ip:publicIpAddress,state:state.name}" --output table
-
-# Service logs
-ssh -i ~/.ssh/claude-code-agent-key.pem ubuntu@REDACTED_SERVER_IP "journalctl -u claude-agent -f"
-```
+MIT
