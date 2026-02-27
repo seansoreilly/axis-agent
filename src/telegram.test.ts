@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentResult } from "./agent.js";
+import type { Fact } from "./memory.js";
 
 // Shared mock bot instance — captured when TelegramBot constructor is called
 let mockBotInstance: Record<string, ReturnType<typeof vi.fn>>;
@@ -36,18 +37,28 @@ function makeAgent(runImpl?: (...args: unknown[]) => unknown) {
           totalCostUsd: 0.01,
           isError: false,
         } satisfies AgentResult),
+    generateSummary: vi.fn().mockResolvedValue(null),
+    shouldSummarize: vi.fn().mockReturnValue(false),
   };
+}
+
+function makeFact(value: string, category = "general" as const): Fact {
+  const now = new Date().toISOString();
+  return { value, category, createdAt: now, updatedAt: now, lastAccessedAt: now };
 }
 
 function makeMemory() {
   return {
     recordSession: vi.fn(),
+    updateSessionSummary: vi.fn(),
     setFact: vi.fn(),
     deleteFact: vi.fn(),
-    getAllFacts: vi.fn().mockReturnValue({}),
+    getAllFacts: vi.fn().mockReturnValue({} as Record<string, Fact>),
     getFact: vi.fn(),
     getLastSession: vi.fn().mockReturnValue(undefined),
+    getLastSessionSummary: vi.fn().mockReturnValue(undefined),
     getContext: vi.fn().mockReturnValue(""),
+    getStats: vi.fn().mockReturnValue({ totalFacts: 0, byCategory: {} }),
   };
 }
 
@@ -187,7 +198,7 @@ describe("TelegramIntegration", () => {
     expect(agent.run).toHaveBeenCalledTimes(2);
     // First call has the stale session
     expect(agent.run.mock.calls[0][1]).toMatchObject({ sessionId: "old-sess" });
-    // Retry has model and signal but no session
+    // Retry has model, signal, and userId but no session
     expect(agent.run.mock.calls[1][1]).not.toHaveProperty("sessionId");
 
     // User gets the recovered response
@@ -523,8 +534,13 @@ describe("TelegramIntegration", () => {
     expect(responseMsg).toBeTruthy();
   });
 
-  it("/status includes model and cost info", async () => {
-    const { handler, botInstance } = await createBot();
+  it("/status includes model and memory stats", async () => {
+    const { handler, botInstance, memory } = await createBot();
+
+    memory.getStats.mockReturnValue({
+      totalFacts: 5,
+      byCategory: { personal: 2, work: 3 },
+    });
 
     handler(makeMsg("/status"));
     await flush();
@@ -533,6 +549,70 @@ describe("TelegramIntegration", () => {
       String(c[1]).includes("Model:")
     );
     expect(statusMsg).toBeTruthy();
+    expect(String(statusMsg[1])).toContain("5");
+  });
+
+  it("/memories shows categorized facts with timestamps", async () => {
+    const { handler, botInstance, memory } = await createBot();
+
+    memory.getAllFacts.mockReturnValue({
+      name: makeFact("Sean", "personal"),
+      "project-x": makeFact("React app", "work"),
+    });
+    memory.getStats.mockReturnValue({
+      totalFacts: 2,
+      byCategory: { personal: 1, work: 1 },
+    });
+
+    handler(makeMsg("/memories"));
+    await flush();
+
+    const msg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("Memories")
+    );
+    expect(msg).toBeTruthy();
+    expect(String(msg[1])).toContain("2 total");
+  });
+
+  it("passes userId to agent.run", async () => {
+    const agent = makeAgent();
+    const { handler } = await createBot(agent);
+
+    handler(makeMsg("hello"));
+    await flush();
+
+    expect(agent.run.mock.calls[0][1]).toMatchObject({ userId: 123 });
+  });
+
+  it("passes cost to recordSession", async () => {
+    const agent = makeAgent();
+    const { handler, memory } = await createBot(agent);
+
+    handler(makeMsg("hello"));
+    await flush();
+
+    expect(memory.recordSession).toHaveBeenCalledWith(
+      "sess-1",
+      123,
+      "hello",
+      { totalCostUsd: 0.01 }
+    );
+  });
+
+  it("triggers summary for expensive sessions", async () => {
+    const agent = makeAgent();
+    agent.shouldSummarize.mockReturnValue(true);
+    agent.generateSummary.mockResolvedValue("- Did stuff\n- Made decisions");
+
+    const { handler, memory } = await createBot(agent);
+
+    handler(makeMsg("complex task"));
+    await flush();
+
+    expect(agent.shouldSummarize).toHaveBeenCalled();
+    // Give the fire-and-forget summary time to complete
+    await flush();
+    expect(agent.generateSummary).toHaveBeenCalledWith("sess-1");
   });
 
   it("handles reply context from replied messages", async () => {

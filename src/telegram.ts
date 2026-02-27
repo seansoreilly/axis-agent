@@ -26,6 +26,7 @@ interface UserState {
   totalCostUsd: number;
   requestCount: number;
   abortController?: AbortController;
+  recentPhotos: Array<{ path: string; timestamp: number }>;
 }
 
 export class TelegramIntegration {
@@ -58,7 +59,7 @@ export class TelegramIntegration {
   private getState(userId: number): UserState {
     let state = this.userState.get(userId);
     if (!state) {
-      state = { totalCostUsd: 0, requestCount: 0 };
+      state = { totalCostUsd: 0, requestCount: 0, recentPhotos: [] };
       this.userState.set(userId, state);
     }
     return state;
@@ -226,6 +227,13 @@ export class TelegramIntegration {
         const tmpPath = `/tmp/telegram_photo_${Date.now()}.${ext}`;
         const { writeFileSync } = await import("node:fs");
         writeFileSync(tmpPath, downloaded.buffer);
+        // Track for /post command
+        const state = this.getState(userId!);
+        state.recentPhotos.push({ path: tmpPath, timestamp: Date.now() });
+        const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+        state.recentPhotos = state.recentPhotos
+          .filter(p => p.timestamp > thirtyMinAgo)
+          .slice(-10);
         text = `[Photo uploaded: ${tmpPath}]\nThe user sent a photo. Use the Read tool to view it at the path above.\n\n${text}`.trim();
       }
       if (!text) text = "What's in this image?";
@@ -314,20 +322,23 @@ export class TelegramIntegration {
         sessionId,
         model,
         signal: abortController.signal,
+        userId,
       });
 
       // If the run failed with a session, retry without it (stale session recovery)
       if (result.isError && sessionId && !abortController.signal.aborted) {
         info("telegram", `Retrying without session for user ${userId} (stale session)`);
         this.userSessions.delete(userId);
-        result = await this.agent.run(text, { model, signal: abortController.signal });
+        result = await this.agent.run(text, { model, signal: abortController.signal, userId });
       }
 
       if (result.sessionId) {
         this.userSessions.set(userId, result.sessionId);
       }
 
-      this.memory.recordSession(result.sessionId, userId, text);
+      this.memory.recordSession(result.sessionId, userId, text, {
+        totalCostUsd: result.totalCostUsd,
+      });
       this.recordResponseTime(Date.now() - startTime);
 
       // Track cost
@@ -336,6 +347,11 @@ export class TelegramIntegration {
 
       await progress.stop();
       await this.sendResponse(chatId, result.text, result);
+
+      // Generate conversation summary for expensive sessions (fire-and-forget)
+      if (this.agent.shouldSummarize(result) && result.sessionId) {
+        this.generateAndStoreSummary(result.sessionId, userId).catch(() => {});
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       logError("telegram", `Agent run failed for user ${userId}: ${errMsg}`);
@@ -420,7 +436,8 @@ export class TelegramIntegration {
             "/remember - Store a fact\n" +
             "/forget - Remove a fact\n" +
             "/memories - List all facts\n" +
-            "/status - Show bot status"
+            "/status - Show bot status\n" +
+            "/post - Create a Facebook post with recent photos"
         );
         break;
 
@@ -569,8 +586,32 @@ export class TelegramIntegration {
         if (entries.length === 0) {
           await this.bot.sendMessage(chatId, "No memories stored.");
         } else {
-          const list = entries.map(([k, v]) => `- ${k}: ${v}`).join("\n");
-          await this.bot.sendMessage(chatId, `Memories:\n${list}`);
+          // Sort by updatedAt descending
+          entries.sort(([, a], [, b]) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          );
+          const list = entries
+            .map(([k, f]) => {
+              const age = this.formatAge(new Date(f.updatedAt));
+              return `- *${k}*: ${f.value} _[${f.category}, ${age}]_`;
+            })
+            .join("\n");
+          const stats = this.memory.getStats();
+          const catSummary = Object.entries(stats.byCategory)
+            .map(([c, n]) => `${c}: ${n}`)
+            .join(", ");
+          await this.bot
+            .sendMessage(
+              chatId,
+              `Memories (${stats.totalFacts} total — ${catSummary}):\n${list}`,
+              { parse_mode: "Markdown" }
+            )
+            .catch(() =>
+              this.bot.sendMessage(
+                chatId,
+                `Memories (${stats.totalFacts}):\n${entries.map(([k, f]) => `- ${k}: ${f.value}`).join("\n")}`
+              )
+            );
         }
         break;
       }
@@ -580,12 +621,16 @@ export class TelegramIntegration {
         const model = state.modelOverride
           ? Object.entries(VALID_MODELS).find(([, v]) => v === state.modelOverride)?.[0] ?? "custom"
           : "default";
+        const memStats = this.memory.getStats();
+        const catLine = Object.entries(memStats.byCategory)
+          .map(([c, n]) => `${c}:${n}`)
+          .join(" ");
         await this.bot.sendMessage(
           chatId,
           [
             `Uptime: ${Math.floor(process.uptime())}s`,
             `Active sessions: ${this.userSessions.size}`,
-            `Memories: ${Object.keys(this.memory.getAllFacts()).length}`,
+            `Memories: ${memStats.totalFacts} (${catLine})`,
             `Model: ${model}`,
             `Session cost: $${state.totalCostUsd.toFixed(4)}`,
             this.scheduler
@@ -598,10 +643,85 @@ export class TelegramIntegration {
         break;
       }
 
+      case "/post": {
+        const state = this.getState(userId);
+        const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+        const photos = state.recentPhotos.filter(p => p.timestamp > thirtyMinAgo);
+
+        if (photos.length === 0) {
+          await this.bot.sendMessage(
+            chatId,
+            "No recent photos found. Send one or more photos first, then use /post."
+          );
+          return;
+        }
+
+        const photoList = photos.map(p => p.path).join("\n");
+        const userNotes = argText.trim();
+
+        const melbourneTime = new Date().toLocaleString("en-AU", {
+          timeZone: "Australia/Melbourne",
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        });
+
+        const prompt = [
+          "## Facebook Post Workflow",
+          "",
+          `Current Melbourne time: ${melbourneTime}`,
+          "",
+          "The user wants to create a Facebook post for their configured Facebook Page.",
+          "Follow these steps IN ORDER:",
+          "",
+          "### Step 1: Analyze the photos",
+          `The following ${photos.length} photo(s) were uploaded:`,
+          photoList,
+          "Use the Read tool to view each photo and understand what is shown.",
+          "",
+          "### Step 2: Check calendar for current event context",
+          "Run: python3 /home/ubuntu/agent/.claude/skills/google-calendar/scripts/ical_fetch.py --days 1",
+          "Check if the user is CURRENTLY AT an event (i.e. the event's start time has passed and end time hasn't).",
+          "ONLY use event details (name, location, description) if the current time falls within an event's time range.",
+          "If there is no current event, do NOT guess or assume location/event context — rely solely on the photos and user notes.",
+          "",
+          "### Step 3: Crop photos for Facebook",
+          "For each photo, crop/resize for Facebook using sharp via Node.js.",
+          "Run for each photo:",
+          'node -e "const sharp = require(\'sharp\'); sharp(\'INPUT_PATH\').resize(1200, 900, {fit:\'cover\',position:\'attention\'}).jpeg({quality:90}).toFile(\'OUTPUT_PATH\').then(()=>console.log(\'done\'))"',
+          "Save cropped versions as /tmp/fb_post_N.jpg (where N is 1, 2, 3...)",
+          "",
+          "### Step 4: Generate post text",
+          "Write engaging Facebook post text suitable for a local councillor's page.",
+          "Tone: warm, community-focused, professional but approachable.",
+          "Only reference event/location details if confirmed from a current calendar event in Step 2.",
+          "Do NOT use hashtags excessively (1-2 max if appropriate).",
+          userNotes ? `\nUser's notes/context: ${userNotes}` : "",
+          "",
+          "### Step 5: Present for approval",
+          "Show the user:",
+          "- The generated post text",
+          "- Confirm which photos will be posted (mention count)",
+          "- Ask: 'Ready to post? Reply YES to publish, or tell me what to change.'",
+          "",
+          "DO NOT post to Facebook yet. Wait for explicit approval.",
+          "When the user approves, run:",
+          "python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_photos.py --message 'THE_TEXT' --photos /tmp/fb_post_1.jpg /tmp/fb_post_2.jpg ...",
+        ].join("\n");
+
+        state.recentPhotos = [];
+        await this.runAgent(chatId, userId, prompt);
+        break;
+      }
+
       default:
         await this.bot.sendMessage(
           chatId,
-          "Commands: /new /cancel /retry /model /cost /schedule /tasks /remember /forget /memories /status"
+          "Commands: /new /cancel /retry /model /cost /schedule /tasks /remember /forget /memories /status /post"
         );
     }
   }
@@ -783,6 +903,28 @@ export class TelegramIntegration {
       await this.bot.sendMessage(chatId, chunks[i], opts).catch(
         () => this.bot.sendMessage(chatId, chunks[i], plainOpts)
       );
+    }
+  }
+
+  private formatAge(date: Date): string {
+    const diffMs = Date.now() - date.getTime();
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  private async generateAndStoreSummary(
+    sessionId: string,
+    userId: number
+  ): Promise<void> {
+    info("telegram", `Generating conversation summary for session ${sessionId}`);
+    const summary = await this.agent.generateSummary(sessionId);
+    if (summary) {
+      this.memory.updateSessionSummary(sessionId, summary);
+      info("telegram", `Stored conversation summary for user ${userId}`);
     }
   }
 

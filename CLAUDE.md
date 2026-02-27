@@ -25,7 +25,7 @@ Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-a
 
 **Key components:**
 - `Agent` (`src/agent.ts`) — wraps SDK `query()` as an async generator. Builds a system prompt with memory context, orchestration instructions, and calendar tools. Supports session resumption (`options.resume`), per-call model override, and `AbortSignal` for cancellation.
-- `TelegramIntegration` (`src/telegram.ts`) — polling-mode bot. Handles commands (`/new`, `/cancel`, `/retry`, `/model`, `/cost`, `/schedule`, `/tasks`, `/remember`, `/forget`, `/memories`, `/status`), inline keyboard callbacks, photo/voice/document uploads, reply context, and per-user state (model override, cost tracking, abort controller). Constructor takes optional `Scheduler` as 5th param.
+- `TelegramIntegration` (`src/telegram.ts`) — polling-mode bot. Handles commands (`/new`, `/cancel`, `/retry`, `/model`, `/cost`, `/schedule`, `/tasks`, `/remember`, `/forget`, `/memories`, `/status`, `/post`), inline keyboard callbacks, photo/voice/document uploads, reply context, and per-user state (model override, cost tracking, abort controller, recent photos). Constructor takes optional `Scheduler` as 5th param.
 - `Scheduler` (`src/scheduler.ts`) — cron-based task runner via `node-cron` with Australia/Melbourne timezone. Max 20 tasks, minimum 5-minute interval. Results delivered via callback (wired to Telegram notifications in index.ts).
 - `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Routes: `GET /health`, `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`.
 - `Memory` (`src/memory.ts`) — JSON file store at `~/.claude-agent/memory/store.json`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
@@ -69,6 +69,34 @@ ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/ag
 - **Telegram redelivers on restart** — polling mode picks up unacked messages. Benign; may hit stale session errors.
 - **Stale dist/ test files** — vitest may pick up `dist/telegram.test.js`. Delete it or rebuild.
 - **`cron-parser` v5 API** — uses `CronExpressionParser.parse()` (not the old `parseExpression()`).
+
+## Capability Routing
+
+The agent's system prompt includes a decision framework for adding new integrations. When the agent needs a new capability, it evaluates options in priority order:
+
+1. **MCP server** — SDK-native tool provider. Config in `.mcp.json` (auto-loaded from cwd). Best option when one exists.
+2. **Community skill** — Pre-built `.claude/skills/` package. Must support headless auth (no OAuth browser flows).
+3. **Custom skill** — Hand-built in `.claude/skills/<name>/` with `SKILL.md`. Use existing gmail/google-calendar skills as templates.
+4. **One-off Bash** — For simple, non-recurring tasks.
+
+Key constraint: the agent runs headless under systemd, so only API keys / app passwords / service accounts work for auth. `allowedTools` includes `mcp__*` to permit any configured MCP server tools.
+
+## Adding Telegram Slash Commands
+
+When adding a new slash command, update ALL of these locations:
+
+1. **`handleCommand()` switch statement** in `src/telegram.ts` — the actual handler
+2. **`/start` case help text** — welcome message listing commands
+3. **`default` case command list** — fallback "unknown command" response
+4. **`src/agent.ts` system prompt** — "Telegram Commands" section so the agent knows about it
+5. **Telegram Bot API `setMyCommands`** — update via API call so commands appear in Telegram's autocomplete:
+   ```bash
+   TOKEN=$(grep TELEGRAM_BOT_TOKEN .env | cut -d= -f2)
+   curl -s "https://api.telegram.org/bot${TOKEN}/setMyCommands" \
+     -H "Content-Type: application/json" \
+     -d '{"commands": [{"command": "name", "description": "Description"}, ...]}'
+   ```
+6. **This file (`CLAUDE.md`)** — update the command list in the TelegramIntegration description above
 
 ## Security Model
 

@@ -2,15 +2,29 @@
 /**
  * CLI helper for the agent to read/write persistent memory facts.
  * Usage:
- *   remember.js set <key> <value>   — store a fact
- *   remember.js delete <key>        — remove a fact
- *   remember.js list                — list all facts
+ *   remember.js set <key> <value>            — store a fact (auto-categorized)
+ *   remember.js set <key> <value> --cat <c>  — store with explicit category
+ *   remember.js delete <key>                 — remove a fact
+ *   remember.js list                         — list all facts
+ *
+ * Categories: personal, work, preference, system, general
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const MEMORY_DIR = process.env.MEMORY_DIR || "/home/ubuntu/.claude-agent/memory";
 const STORE_PATH = join(MEMORY_DIR, "store.json");
+
+const VALID_CATEGORIES = ["personal", "work", "preference", "system", "general"];
+
+function inferCategory(key) {
+  const k = key.toLowerCase();
+  if (/name|birthday|location|timezone|email|phone|address/.test(k)) return "personal";
+  if (/project|employer|role|repo|stack|work|client/.test(k)) return "work";
+  if (/prefer|style|favorite|language|tool/.test(k)) return "preference";
+  if (/deploy|server|service|config|infra/.test(k)) return "system";
+  return "general";
+}
 
 function load() {
   if (existsSync(STORE_PATH)) {
@@ -32,16 +46,43 @@ const [, , cmd, ...args] = process.argv;
 
 switch (cmd) {
   case "set": {
-    const key = sanitizeKey(args[0] || "");
-    const value = args.slice(1).join(" ");
+    // Parse --cat flag if present
+    const catIdx = args.indexOf("--cat");
+    let category = null;
+    let valueArgs = args;
+    if (catIdx >= 0 && args[catIdx + 1]) {
+      category = args[catIdx + 1];
+      valueArgs = [...args.slice(0, catIdx), ...args.slice(catIdx + 2)];
+    }
+
+    const key = sanitizeKey(valueArgs[0] || "");
+    const value = valueArgs.slice(1).join(" ");
     if (!key || !value) {
-      console.error("Usage: remember.js set <key> <value>");
+      console.error("Usage: remember.js set <key> <value> [--cat <category>]");
       process.exit(1);
     }
+
+    if (category && !VALID_CATEGORIES.includes(category)) {
+      console.error(`Invalid category: ${category}. Valid: ${VALID_CATEGORIES.join(", ")}`);
+      process.exit(1);
+    }
+
     const data = load();
-    data.facts[key] = value;
+    const now = new Date().toISOString();
+    const existing = data.facts[key];
+
+    // Support both legacy string format and new structured format
+    const isStructured = existing && typeof existing === "object" && "value" in existing;
+
+    data.facts[key] = {
+      value,
+      category: category || (isStructured ? existing.category : inferCategory(key)),
+      createdAt: isStructured ? existing.createdAt : now,
+      updatedAt: now,
+      lastAccessedAt: now,
+    };
     save(data);
-    console.log(`Remembered: ${key} = ${value}`);
+    console.log(`Remembered: ${key} = ${value} [${data.facts[key].category}]`);
     break;
   }
   case "delete": {
@@ -66,7 +107,13 @@ switch (cmd) {
     if (entries.length === 0) {
       console.log("No memories stored.");
     } else {
-      entries.forEach(([k, v]) => console.log(`${k}: ${v}`));
+      entries.forEach(([k, v]) => {
+        if (typeof v === "object" && v !== null && "value" in v) {
+          console.log(`${k}: ${v.value} [${v.category}]`);
+        } else {
+          console.log(`${k}: ${v}`);
+        }
+      });
     }
     break;
   }
