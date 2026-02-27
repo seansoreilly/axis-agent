@@ -4,3 +4,6 @@ dist/
 *.log
 memories.json
 store.json
+gmail_app_password.json
+google-credentials.json
+google-token.json

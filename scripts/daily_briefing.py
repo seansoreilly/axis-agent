@@ -10,7 +10,7 @@ tz = ZoneInfo("Australia/Melbourne")
 now = datetime.now(tz=tz)
 
 result = subprocess.run(
-    ["python3", "/home/ubuntu/agent/scripts/calendar/ical_fetch.py", "--days", "1"],
+    ["python3", "/home/ubuntu/agent/.claude/skills/google-calendar/scripts/ical_fetch.py", "--days", "1"],
     capture_output=True, text=True
 )
 

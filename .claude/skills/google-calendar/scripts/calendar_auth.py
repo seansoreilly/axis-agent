@@ -36,7 +36,7 @@ def cmd_get_url():
             "1. Open the URL above in your browser\n"
             "2. Sign in and authorize access\n"
             "3. Copy the authorization code shown\n"
-            "4. Run: python3 /home/ubuntu/agent/scripts/calendar/calendar_auth.py --exchange-code YOUR_CODE"
+            "4. Run: python3 /home/ubuntu/agent/.claude/skills/google-calendar/scripts/calendar_auth.py --exchange-code YOUR_CODE"
         )
     }, indent=2))
 
