@@ -76,16 +76,9 @@ Stage all changes and create a conventional commit:
 - Include a summary of what the agent changed in the commit body
 - Push to origin
 
-### 7. Redeploy scrubbed version
-
-If personal data was removed in step 3, redeploy to the instance so it's also clean:
-
-```bash
-DEPLOY_HOST="ubuntu@REDACTED_SERVER_IP" ./deploy.sh
-```
-
 ## Important
 
+- **Do NOT redeploy to the instance.** The scrubbing is only for the public git repo. The instance is private and the unscrubbed version is fine there. Redeploying could break things by removing hardcoded values the agent relies on.
 - NEVER commit files containing real tokens, passwords, or API keys
 - The `.env` file is gitignored and should never be synced
 - `memories.json` and `store.json` contain user data and are gitignored
