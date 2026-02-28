@@ -113,6 +113,7 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 | `facebook` | `/home/ubuntu/.claude-agent/facebook-page-token.json` |
 | `google-service-account` | `/home/ubuntu/.claude-agent/google-service-account.json` |
 | `google-credentials` | `/home/ubuntu/.claude-agent/google-credentials.json` |
+| `google-contacts-token` | `/home/ubuntu/.claude-agent/google-contacts-token.json` |
 
 **Workflows:**
 - **Sync secrets:** `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)

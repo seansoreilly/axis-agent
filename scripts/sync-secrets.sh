@@ -17,6 +17,7 @@ BW_GMAIL_ID="REDACTED_BW_ID"
 BW_FACEBOOK_ID="REDACTED_BW_ID"
 BW_GOOGLE_SA_ID="REDACTED_BW_ID"
 BW_GOOGLE_CREDS_ID="REDACTED_BW_ID"
+BW_GOOGLE_CONTACTS_TOKEN_ID=""  # TODO: Add Bitwarden item ID after storing token in vault
 
 # Authenticate / unlock Bitwarden (skip if BW_SESSION already set)
 if [ -z "${BW_SESSION:-}" ]; then
@@ -85,6 +86,9 @@ push_secret "$BW_GMAIL_ID"       "$REMOTE_AGENT_DIR/gmail_app_password.json"    
 push_secret "$BW_FACEBOOK_ID"    "$REMOTE_CLAUDE_DIR/facebook-page-token.json"        "facebook"
 push_secret "$BW_GOOGLE_SA_ID"   "$REMOTE_CLAUDE_DIR/google-service-account.json"     "google-service-account"
 push_secret "$BW_GOOGLE_CREDS_ID" "$REMOTE_CLAUDE_DIR/google-credentials.json"        "google-credentials"
+if [ -n "$BW_GOOGLE_CONTACTS_TOKEN_ID" ]; then
+  push_secret "$BW_GOOGLE_CONTACTS_TOKEN_ID" "$REMOTE_CLAUDE_DIR/google-contacts-token.json" "google-contacts-token"
+fi
 
 bw lock
 echo ""
