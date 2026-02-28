@@ -307,15 +307,8 @@ export class TelegramIntegration {
     const progress = this.startProgressUpdates(chatId, startTime);
 
     try {
-      // Check in-memory first, then fall back to persisted session (survives restarts)
-      let sessionId = this.userSessions.get(userId);
-      if (!sessionId) {
-        const persisted = this.memory.getLastSession(userId);
-        if (persisted) {
-          sessionId = persisted.sessionId;
-          info("telegram", `Restored session ${sessionId} for user ${userId} from disk`);
-        }
-      }
+      // In-memory session map is the single source of truth for resumption
+      const sessionId = this.userSessions.get(userId);
 
       const model = state.modelOverride;
       let result = await this.agent.run(text, {
@@ -336,9 +329,12 @@ export class TelegramIntegration {
         this.userSessions.set(userId, result.sessionId);
       }
 
-      this.memory.recordSession(result.sessionId, userId, text, {
-        totalCostUsd: result.totalCostUsd,
-      });
+      // Only record sessions with valid session IDs (for analytics, not resumption)
+      if (result.sessionId) {
+        this.memory.recordSession(result.sessionId, userId, text, {
+          totalCostUsd: result.totalCostUsd,
+        });
+      }
       this.recordResponseTime(Date.now() - startTime);
 
       // Track cost

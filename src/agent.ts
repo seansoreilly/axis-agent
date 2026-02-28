@@ -277,8 +277,10 @@ export class Agent {
             resultText = message.result;
           } else {
             isError = true;
-            if ("errors" in message) {
+            if ("errors" in message && message.errors.length > 0) {
               resultText = `Error: ${message.errors.join(", ")}`;
+            } else {
+              resultText = "The agent encountered an error. Please try again or start a /new session.";
             }
           }
         }

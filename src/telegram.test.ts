@@ -615,6 +615,99 @@ describe("TelegramIntegration", () => {
     expect(agent.generateSummary).toHaveBeenCalledWith("sess-1");
   });
 
+  it("/new actually prevents session resumption on next message", async () => {
+    const agent = makeAgent();
+    const { handler } = await createBot(agent);
+
+    // First message establishes a session
+    handler(makeMsg("hello"));
+    await flush();
+    expect(agent.run.mock.calls[0][1].sessionId).toBeUndefined();
+
+    // Second message should resume the session
+    handler(makeMsg("follow up"));
+    await flush();
+    expect(agent.run.mock.calls[1][1]).toMatchObject({ sessionId: "sess-1" });
+
+    // /new clears the session
+    handler(makeMsg("/new"));
+    await flush();
+
+    // Next message should NOT have a sessionId
+    handler(makeMsg("fresh start"));
+    await flush();
+    expect(agent.run.mock.calls[2][1].sessionId).toBeUndefined();
+  });
+
+  it("new_session callback prevents session resumption", async () => {
+    const agent = makeAgent();
+    const { handler, callbackHandler } = await createBot(agent);
+
+    // Establish a session
+    handler(makeMsg("hello"));
+    await flush();
+
+    // Click "New session" button
+    callbackHandler({
+      id: "cb-new",
+      from: { id: 123 },
+      message: { chat: { id: 456 } },
+      data: "new_session",
+    });
+    await flush();
+
+    // Next message should NOT have a sessionId
+    handler(makeMsg("fresh"));
+    await flush();
+    expect(agent.run.mock.calls[1][1].sessionId).toBeUndefined();
+  });
+
+  it("does not record session with empty sessionId", async () => {
+    const agent = makeAgent();
+    agent.run.mockResolvedValueOnce({
+      text: "The agent encountered an error. Please try again or start a /new session.",
+      sessionId: "",
+      durationMs: 10,
+      totalCostUsd: 0,
+      isError: true,
+    });
+
+    const { handler, memory } = await createBot(agent);
+
+    handler(makeMsg("fail"));
+    await flush();
+
+    expect(memory.recordSession).not.toHaveBeenCalled();
+  });
+
+  it("shows meaningful error when SDK returns empty errors array", async () => {
+    const agent = makeAgent();
+    // Simulate what happens when agent.ts gets an empty errors array:
+    // it now returns a meaningful message instead of "Error: "
+    agent.run.mockResolvedValueOnce({
+      text: "The agent encountered an error. Please try again or start a /new session.",
+      sessionId: "",
+      durationMs: 10,
+      totalCostUsd: 0,
+      isError: true,
+    });
+
+    const { handler, botInstance } = await createBot(agent);
+
+    handler(makeMsg("trigger error"));
+    await flush();
+
+    const errorMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("encountered an error")
+    );
+    expect(errorMsg).toBeTruthy();
+    // Should NOT show bare "Error: " with nothing after
+    const bareError = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).match(/^Error:\s*$/)
+    );
+    expect(bareError).toBeUndefined();
+  });
+
   it("handles reply context from replied messages", async () => {
     const agent = makeAgent();
     const { handler } = await createBot(agent);
