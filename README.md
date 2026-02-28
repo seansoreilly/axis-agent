@@ -1,6 +1,6 @@
 # Claude Code Agent
 
-An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview). Receives messages via Telegram, dispatches them to Claude Code, and returns results. General-purpose assistant + task automation (web browsing, file management, research, scheduled tasks, calendar integration).
+An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview). Receives messages via Telegram, dispatches them to Claude Code, and returns results. General-purpose assistant + task automation (web browsing, file management, research, scheduled tasks, calendar integration, email, social media posting).
 
 ## Why This Over OpenClaw?
 
@@ -28,17 +28,21 @@ HTTP API --> Fastify Gateway --------^
 Cron    --> Scheduler ---------------^
 ```
 
+The agent runs as a single Node.js process under systemd with security hardening. Health monitoring via GitHub Actions auto-restarts the service or reboots the instance if needed.
+
 ## Features
 
 ### Telegram Bot
 - **Conversational**: persistent sessions per user, with session resume across restarts
+- **Session summaries**: auto-generated for sessions costing ≥$0.05, injected when resuming context
 - **Model switching**: `/model opus|sonnet|haiku` to change models per session
 - **Cancel/retry**: `/cancel` aborts a running request, `/retry` re-runs the last prompt
 - **Cost tracking**: `/cost` shows accumulated usage and per-request averages
-- **Media support**: photos (vision), voice messages, and document uploads
-- **Progress indicators**: typing status, ETA based on recent response times, periodic updates
+- **Media support**: photos (vision), voice messages (with duration), and document uploads
+- **Progress indicators**: typing status, ETA based on recent response times, periodic updates every 60s
 - **Inline keyboards**: retry and new session buttons on every response
 - **Persistent memory**: `/remember key=value`, `/forget key`, `/memories`
+- **Reply context**: reply to a specific message to include it as context
 
 ### Scheduled Tasks
 - Create via Telegram (`/schedule add`) or HTTP API
@@ -46,18 +50,24 @@ Cron    --> Scheduler ---------------^
 - Results sent as Telegram notifications
 - Limits: max 20 tasks, minimum 5-minute interval
 
-### Google Calendar Integration
-- Read events via iCal feed (fast) or Google Calendar API (read/write)
-- Create, update, delete, and search calendar events
-- Requires a Google service account shared with the target calendar
+### Integrations
+- **Google Calendar** — read events via iCal feed (fast) or Google Calendar API (full CRUD). Requires a Google service account.
+- **Gmail** — send and read emails via app password authentication (headless-compatible)
+- **Facebook** — post text and photos to a Facebook Page via Graph API. Use `/post` in Telegram after uploading photos.
+
+### Orchestration
+- Spawns parallel subagents for complex multi-part tasks
+- Chooses model tier per subtask (Opus for reasoning, Sonnet for coding, Haiku for lookups)
+- Structured capability routing for adding new integrations (MCP servers → community skills → custom skills → one-off Bash)
 
 ### Self-Modification
 - The agent can edit its own source code and redeploy via `scripts/deploy-self.sh`
 - Use `/sync-from-instance` locally to pull changes back to the repo
 
-### Orchestration
-- Spawns parallel subagents for complex multi-part tasks
-- Chooses model tier per subtask (Opus for reasoning, Sonnet for coding, Haiku for lookups)
+### Health Monitoring
+- **GitHub Actions** workflow runs every 30 minutes — checks instance state, SSH connectivity, and service health
+- **Self-heal script** runs on the instance via systemd timer — restarts the service if it becomes inactive
+- **Local health check** script verifies Tailscale, AWS instance state, and peer connectivity
 
 ## Installation
 
@@ -186,6 +196,7 @@ DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh
 | `/forget key` | Remove a fact |
 | `/memories` | List all facts |
 | `/status` | Show uptime, sessions, model, cost, tasks |
+| `/post [notes]` | Create a Facebook post using recently uploaded photos |
 
 Any other message is sent to Claude as a prompt. Sessions persist — follow-up messages maintain conversation context.
 
@@ -193,7 +204,7 @@ Any other message is sent to Claude as a prompt. Sessions persist — follow-up 
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/health` | GET | Health check |
+| `/health` | GET | Health check (returns uptime and timestamp) |
 | `/webhook` | POST | Send prompt to agent (`{ "prompt": "...", "sessionId?": "..." }`) |
 | `/tasks` | GET | List scheduled tasks |
 | `/tasks` | POST | Create scheduled task (`{ "id", "name", "schedule", "prompt" }`) |
@@ -221,14 +232,22 @@ src/
   scheduler.ts        # Cron-based task scheduling
   logger.ts           # Structured logging
 scripts/
-  remember.js         # CLI for persistent fact CRUD
   deploy-self.sh      # Self-deploy (runs on the server)
+  health-check.sh     # Local health monitoring (Tailscale, AWS, SSH, service)
+  self-heal.sh        # Auto-restart service if inactive (systemd timer)
+  remember.js         # CLI for persistent fact CRUD
   daily_briefing.py   # Daily briefing script
   calendar/           # Google Calendar integration (Python)
+.claude/skills/
+  gmail/              # Send and read emails via app password
+  google-calendar/    # Full calendar CRUD via service account
+  facebook/           # Post text and photos to Facebook Page
+  commit/             # Safe git commit with secret/PII leak prevention
+.github/workflows/
+  health-check.yml    # GitHub Actions health monitoring (every 30 min)
 systemd/
   claude-agent.service  # Systemd unit file with security hardening
 deploy.sh               # Deploy from local to remote server
-.claude/commands/       # Claude Code slash commands
 ```
 
 ## License
