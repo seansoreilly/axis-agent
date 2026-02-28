@@ -7,3 +7,7 @@ store.json
 gmail_app_password.json
 google-credentials.json
 google-token.json
+*.json.bak
+__pycache__/
+*.pem
+*.key
