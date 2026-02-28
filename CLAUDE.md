@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Test Commands
 
+Requires Node.js >=22.0.0.
+
 ```bash
 npm run build          # TypeScript compile (tsc) → dist/
 npm run dev            # Run with tsx (no compile step)

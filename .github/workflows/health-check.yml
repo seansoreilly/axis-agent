@@ -1,0 +1,114 @@
+name: Health Check
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      INSTANCE_NAME: claude-code-agent
+      AWS_DEFAULT_REGION: ap-southeast-2
+      SSH_USER: ubuntu
+    steps:
+      - name: Check Lightsail instance state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          STATE=$(aws lightsail get-instance-state \
+            --instance-name "$INSTANCE_NAME" \
+            --query 'state.name' \
+            --output text)
+
+          echo "Instance state: $STATE"
+
+          if [ "$STATE" = "stopped" ]; then
+            echo "::warning::Instance is stopped. Starting..."
+            aws lightsail start-instance --instance-name "$INSTANCE_NAME"
+            echo "INSTANCE_STARTED=true" >> "$GITHUB_ENV"
+            exit 0
+          elif [ "$STATE" != "running" ]; then
+            echo "::error::Instance in unexpected state: $STATE"
+            exit 1
+          fi
+
+      - name: Get instance IP
+        if: env.INSTANCE_STARTED != 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          IP=$(aws lightsail get-instance \
+            --instance-name "$INSTANCE_NAME" \
+            --query 'instance.publicIpAddress' \
+            --output text)
+          echo "SSH_HOST=$IP" >> "$GITHUB_ENV"
+          echo "Instance IP: $IP"
+
+      - name: Write SSH key
+        if: env.INSTANCE_STARTED != 'true'
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/key.pem
+          chmod 600 ~/.ssh/key.pem
+
+      - name: Check SSH and service health
+        if: env.INSTANCE_STARTED != 'true'
+        id: ssh_check
+        run: |
+          SSH_OPTS="-i ~/.ssh/key.pem -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes"
+
+          if ! ssh $SSH_OPTS "${SSH_USER}@${SSH_HOST}" "true" 2>/dev/null; then
+            echo "ssh_reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::error::SSH unreachable"
+            exit 0
+          fi
+
+          echo "ssh_reachable=true" >> "$GITHUB_OUTPUT"
+
+          SERVICE=$(ssh $SSH_OPTS "${SSH_USER}@${SSH_HOST}" \
+            "systemctl is-active claude-agent 2>/dev/null || echo inactive")
+          echo "service_status=$SERVICE" >> "$GITHUB_OUTPUT"
+          echo "Service status: $SERVICE"
+
+      - name: Restart service if down
+        if: env.INSTANCE_STARTED != 'true' && steps.ssh_check.outputs.ssh_reachable == 'true' && steps.ssh_check.outputs.service_status != 'active'
+        id: restart
+        run: |
+          SSH_OPTS="-i ~/.ssh/key.pem -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes"
+
+          echo "::warning::Service is ${{ steps.ssh_check.outputs.service_status }}. Restarting..."
+          ssh $SSH_OPTS "${SSH_USER}@${SSH_HOST}" "sudo systemctl restart claude-agent"
+          sleep 10
+
+          SERVICE=$(ssh $SSH_OPTS "${SSH_USER}@${SSH_HOST}" \
+            "systemctl is-active claude-agent 2>/dev/null || echo inactive")
+          echo "service_after_restart=$SERVICE" >> "$GITHUB_OUTPUT"
+
+          if [ "$SERVICE" = "active" ]; then
+            echo "Service restarted successfully"
+          else
+            echo "::error::Service restart failed (status: $SERVICE)"
+          fi
+
+      - name: Reboot if unreachable or restart failed
+        if: |
+          env.INSTANCE_STARTED != 'true' && (
+            steps.ssh_check.outputs.ssh_reachable == 'false' ||
+            (steps.restart.outputs.service_after_restart != '' && steps.restart.outputs.service_after_restart != 'active')
+          )
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          echo "::error::Rebooting instance via AWS CLI..."
+          aws lightsail reboot-instance --instance-name "$INSTANCE_NAME"
+          echo "Reboot command sent."
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/key.pem
