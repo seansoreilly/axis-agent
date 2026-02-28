@@ -100,6 +100,28 @@ When adding a new slash command, update ALL of these locations:
    ```
 6. **This file (`CLAUDE.md`)** — update the command list in the TelegramIntegration description above
 
+## Secret Management
+
+Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw` CLI runs **locally only** — the master password never touches the server.
+
+**Vault folder:** `claude-agent-lightsail`
+
+| Vault Item | Server Destination |
+|---|---|
+| `env-secrets` | `/home/ubuntu/agent/.env` (merged with config vars) |
+| `gmail` | `/home/ubuntu/agent/gmail_app_password.json` |
+| `facebook` | `/home/ubuntu/.claude-agent/facebook-page-token.json` |
+| `google-service-account` | `/home/ubuntu/.claude-agent/google-service-account.json` |
+| `google-credentials` | `/home/ubuntu/.claude-agent/google-credentials.json` |
+
+**Workflows:**
+- **Sync secrets:** `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)
+- **Add/rotate a secret:** Update in Bitwarden vault → run sync
+- **Rollback:** `bash scripts/rollback-secrets.sh <backup-dir>` (backups created by migration script in `~/.claude-agent-backup-*`)
+- **New instance:** Install `bw` CLI locally, run `sync-secrets.sh` after placing config-only `.env` on server
+
+General config (PORT, CLAUDE_MODEL, etc.) stays in `.env` on the server and is not managed by Bitwarden. See `.env.example` for the split.
+
 ## Security Model
 
 - Gateway is localhost-only (Tailscale provides network access control)
