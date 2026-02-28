@@ -94,18 +94,15 @@ npm run build
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` with general config (ports, model settings, paths). Secrets (API keys, tokens) are managed separately via Bitwarden — see [Secret Management](#secret-management) below.
 
 ```bash
-TELEGRAM_BOT_TOKEN=your-token-from-botfather
-TELEGRAM_ALLOWED_USERS=your-numeric-telegram-id
 PORT=8080
 CLAUDE_MODEL=claude-sonnet-4-6
 CLAUDE_MAX_TURNS=25
 CLAUDE_MAX_BUDGET_USD=5
 CLAUDE_WORK_DIR=/home/ubuntu/workspace
 MEMORY_DIR=/home/ubuntu/.claude-agent/memory
-ICAL_URL=your-ical-feed-url  # optional, for calendar integration
 ```
 
 ### 3. Authenticate Claude Code on the server
@@ -210,8 +207,27 @@ Any other message is sent to Claude as a prompt. Sessions persist — follow-up 
 | `/tasks` | POST | Create scheduled task (`{ "id", "name", "schedule", "prompt" }`) |
 | `/tasks/:id` | DELETE | Remove scheduled task |
 
+## Secret Management
+
+Secrets (API keys, tokens, credentials) are stored in [Bitwarden](https://bitwarden.com/) and synced to the server at deploy time. The `bw` CLI runs **locally only** — your master password never touches the server.
+
+**Setup:**
+1. Install the Bitwarden CLI: `npm install -g @bitwarden/cli`
+2. Run the one-time migration: `bash scripts/migrate-secrets-to-bitwarden.sh`
+3. Sync secrets to server: `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)
+
+**Vault folder:** `claude-agent-lightsail` — contains Secure Notes for env secrets, Gmail, Facebook, and Google credentials.
+
+**Workflows:**
+- **Rotate a secret:** Update in Bitwarden → `bash scripts/sync-secrets.sh`
+- **Deploy with secrets:** `./deploy.sh --sync-secrets`
+- **Rollback:** `bash scripts/rollback-secrets.sh ~/.claude-agent-backup-<timestamp>`
+
+See `CLAUDE.md` for the full secret inventory and `.env.example` for the config vs secrets split.
+
 ## Security
 
+- **Secret management**: Secrets stored in Bitwarden vault, synced to server via SCP. Master password never leaves the local machine. Server files are `chmod 600`.
 - **Network isolation**: Gateway binds to `127.0.0.1` only — not reachable on public IP. Use Tailscale for remote access.
 - **Telegram auth**: Fail-closed — if `TELEGRAM_ALLOWED_USERS` is empty, the service refuses to start. If set, only listed user IDs can interact.
 - **Systemd sandboxing**: `ProtectHome=read-only`, `ProtectSystem=strict`, `NoNewPrivileges=true`, `PrivateTmp=true`, with explicit `ReadWritePaths` for required directories.
@@ -232,6 +248,9 @@ src/
   scheduler.ts        # Cron-based task scheduling
   logger.ts           # Structured logging
 scripts/
+  sync-secrets.sh     # Fetch secrets from Bitwarden, push to server via SCP
+  migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
+  rollback-secrets.sh # Restore server secrets from local backup
   deploy-self.sh      # Self-deploy (runs on the server)
   health-check.sh     # Local health monitoring (Tailscale, AWS, SSH, service)
   self-heal.sh        # Auto-restart service if inactive (systemd timer)
