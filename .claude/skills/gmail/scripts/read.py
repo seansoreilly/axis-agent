@@ -84,7 +84,7 @@ def read_emails(count=10, unread_only=False, folder="INBOX", search=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Read emails from Gmail")
-    parser.add_argument("--count", type=int, default=10, help="Number of emails to fetch")
+    parser.add_argument("--count", type=int, default=5, help="Number of emails to fetch")
     parser.add_argument("--unread", action="store_true", help="Only unread emails")
     parser.add_argument("--folder", default="INBOX", help="Mailbox folder")
     parser.add_argument("--search", help='IMAP search string e.g. "FROM boss@work.com"')
