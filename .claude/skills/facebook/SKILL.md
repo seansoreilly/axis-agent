@@ -20,7 +20,30 @@ python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_photos.py --mess
 - `--message` (required): Caption text for the post
 - `--photos` (required): One or more file paths to image files
 
-**Output:** JSON with fields: `success` (boolean), `post_id`, `url`, or `error`
+**Output:** JSON with fields: `success` (boolean), `post_id`, `url`, `warning` (if app not in Live mode), or `error`
+
+## Optimize photos before posting
+
+```bash
+node /home/ubuntu/agent/.claude/skills/facebook/scripts/optimize_photo.mjs --input /tmp/photo.jpg --output /tmp/fb_post_1.jpg --mode single|multi
+```
+
+**Arguments:**
+- `--input` (required): Source photo path
+- `--output` (required): Destination path for optimized photo
+- `--mode`: `single` (4:5 portrait, 1080x1350) or `multi` (1:1 square, 1080x1080, default)
+
+**What it does:**
+- Analyzes brightness, contrast, and saturation
+- Auto-adjusts exposure for dark/bright images
+- Boosts saturation conditionally (skips already-vivid photos)
+- Enhances contrast for flat/washed-out images
+- Smart-crops using face/saliency detection
+- Applies post-resize sharpening
+- Outputs optimized JPEG (mozjpeg, quality 90)
+- Skips upscaling if source is smaller than target
+
+**Output:** JSON with `success`, `adjustments` array, dimensions, and file sizes
 
 ## Post text only
 
