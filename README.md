@@ -53,7 +53,9 @@ The agent runs as a single Node.js process under systemd with security hardening
 ### Integrations
 - **Google Calendar** — read events via iCal feed (fast) or Google Calendar API (full CRUD). Requires a Google service account.
 - **Gmail** — send and read emails via app password authentication (headless-compatible)
-- **Facebook** — post text and photos to a Facebook Page via Graph API. Use `/post` in Telegram after uploading photos.
+- **Facebook** — post text and photos to a Facebook Page via Graph API. Photos are auto-optimized before posting (EXIF rotation, exposure/saturation/contrast adjustment, saliency-based smart crop to Facebook-optimal aspect ratios, sharpening). Use `/post` in Telegram after uploading photos.
+- **Google Contacts** — search, create, update, and list contacts with fuzzy/partial name matching via OAuth2.
+- **Twilio** — send SMS, make voice calls, and manage phone numbers (AU1 region).
 
 ### Orchestration
 - Spawns parallel subagents for complex multi-part tasks
@@ -260,7 +262,9 @@ scripts/
 .claude/skills/
   gmail/              # Send and read emails via app password
   google-calendar/    # Full calendar CRUD via service account
-  facebook/           # Post text and photos to Facebook Page
+  google-contacts/    # Contact search, create, update with fuzzy matching
+  facebook/           # Post text and photos to Facebook Page (with photo optimizer)
+  twilio/             # SMS, voice calls, phone number management
   commit/             # Safe git commit with secret/PII leak prevention
 .github/workflows/
   health-check.yml    # GitHub Actions health monitoring (every 30 min)
