@@ -24,16 +24,24 @@ python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_photos.py --mess
 
 ## Optimize photos before posting
 
+Single photo:
 ```bash
 node /home/ubuntu/agent/.claude/skills/facebook/scripts/optimize_photo.mjs --input /tmp/photo.jpg --output /tmp/fb_post_1.jpg --mode single|multi
 ```
 
+Batch (multiple photos in one call — faster):
+```bash
+node /home/ubuntu/agent/.claude/skills/facebook/scripts/optimize_photo.mjs --mode multi --batch '[{"input":"/tmp/a.jpg","output":"/tmp/fb_1.jpg"},{"input":"/tmp/b.jpg","output":"/tmp/fb_2.jpg"}]'
+```
+
 **Arguments:**
-- `--input` (required): Source photo path
-- `--output` (required): Destination path for optimized photo
+- `--input` / `--output`: Source and destination paths (single mode)
+- `--batch`: JSON array of `{input, output}` objects (batch mode, processes in parallel)
 - `--mode`: `single` (4:5 portrait, 1080x1350) or `multi` (1:1 square, 1080x1080, default)
 
 **What it does:**
+- EXIF auto-rotation (handles phone photos with rotation metadata)
+- Flattens alpha/transparency to white background (PNG support)
 - Analyzes brightness, contrast, and saturation
 - Auto-adjusts exposure for dark/bright images
 - Boosts saturation conditionally (skips already-vivid photos)
@@ -43,7 +51,7 @@ node /home/ubuntu/agent/.claude/skills/facebook/scripts/optimize_photo.mjs --inp
 - Outputs optimized JPEG (mozjpeg, quality 90)
 - Skips upscaling if source is smaller than target
 
-**Output:** JSON with `success`, `adjustments` array, dimensions, and file sizes
+**Output:** JSON with `success`, `adjustments` array, dimensions, and file sizes. Batch returns `{ success, results: [...] }`
 
 ## Post text only
 
