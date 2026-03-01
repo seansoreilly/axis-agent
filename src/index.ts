@@ -16,16 +16,23 @@ async function main(): Promise<void> {
   // Set up scheduler with Telegram notifications (created before telegram so we can pass it)
   let telegram: TelegramIntegration;
   const primaryUser = config.telegram.allowedUsers[0];
-  const scheduler = new Scheduler(agent, (taskId, result) => {
-    if (primaryUser && telegram) {
-      telegram
-        .sendNotification(primaryUser, `Scheduled task [${taskId}]:\n${result}`)
-        .catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          logError("scheduler", `Failed to send notification: ${msg}`);
-        });
-    }
-  });
+  const scheduler = new Scheduler(
+    agent,
+    (taskId, result) => {
+      if (primaryUser && telegram) {
+        telegram
+          .sendNotification(
+            primaryUser,
+            `Scheduled task [${taskId}]:\n${result}`
+          )
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            logError("scheduler", `Failed to send notification: ${msg}`);
+          });
+      }
+    },
+    config.memoryDir
+  );
 
   // Set up Telegram integration (with scheduler reference)
   telegram = new TelegramIntegration(
