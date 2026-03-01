@@ -30,6 +30,25 @@ TOKEN_FILE = "/home/ubuntu/.claude-agent/facebook-page-token.json"
 
 
 # ---------------------------------------------------------------------------
+# App mode check
+# ---------------------------------------------------------------------------
+
+def check_app_mode(token):
+    """
+    Check if the Facebook app is in development mode.
+    Returns "development" or "live", or None if the check fails.
+    """
+    try:
+        url = f"{GRAPH_API}/app?fields=id,name,mode&access_token={urllib.parse.quote(token)}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get("mode")
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Credentials
 # ---------------------------------------------------------------------------
 
@@ -233,6 +252,15 @@ def main():
             "post_id": post_id_full,
             "url": f"https://www.facebook.com/{page_id}/posts/{post_numeric}",
         }
+
+        app_mode = check_app_mode(token)
+        if app_mode and app_mode.lower() != "live":
+            result["warning"] = (
+                f"Facebook app is in '{app_mode}' mode. "
+                "Posts will only be visible to app admins/developers, not the public. "
+                "Switch to Live mode at https://developers.facebook.com to fix this."
+            )
+
         print(json.dumps(result))
         sys.exit(0)
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""One-time Google Contacts OAuth setup (headless OOB flow)."""
+"""One-time Google Contacts OAuth setup (loopback redirect flow)."""
 import sys
 import json
 import argparse
 from pathlib import Path
 
-PACKAGES_PATH = "/home/ubuntu/.claude-agent/python-packages/lib/python3.12/site-packages"
+PACKAGES_PATH = "/home/ubuntu/.claude-agent/venv/lib/python3.12/site-packages"
 if PACKAGES_PATH not in sys.path:
     sys.path.insert(0, PACKAGES_PATH)
 
@@ -23,7 +23,7 @@ def cmd_get_url():
         sys.exit(1)
 
     flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
-    flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+    flow.redirect_uri = "http://localhost"
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         prompt="consent",
@@ -34,8 +34,9 @@ def cmd_get_url():
         "instruction": (
             "1. Open the URL above in your browser\n"
             "2. Sign in and authorize access\n"
-            "3. Copy the authorization code shown\n"
-            "4. Run: python3 /home/ubuntu/agent/.claude/skills/google-contacts/scripts/contacts_auth.py --exchange-code YOUR_CODE"
+            "3. The browser will redirect to http://localhost?code=XXX — the page won't load, that's OK\n"
+            "4. Copy the 'code' parameter value from the URL bar\n"
+            "5. Run: python3 /home/ubuntu/agent/.claude/skills/google-contacts/scripts/contacts_auth.py --exchange-code YOUR_CODE"
         )
     }, indent=2))
 
@@ -47,7 +48,7 @@ def cmd_exchange_code(code: str):
         sys.exit(1)
 
     flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
-    flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+    flow.redirect_uri = "http://localhost"
     try:
         flow.fetch_token(code=code.strip())
     except Exception as e:
