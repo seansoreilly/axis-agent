@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 # Add installed packages to path
-PACKAGES_PATH = "/home/ubuntu/.claude-agent/python-packages/lib/python3.12/site-packages"
+PACKAGES_PATH = "/home/ubuntu/.claude-agent/venv/lib/python3.12/site-packages"
 if PACKAGES_PATH not in sys.path:
     sys.path.insert(0, PACKAGES_PATH)
 
