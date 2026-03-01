@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import type { Agent } from "./agent.js";
@@ -21,10 +23,44 @@ export class Scheduler {
   private tasks: Map<string, cron.ScheduledTask> = new Map();
   private taskDefs: Map<string, ScheduledTask> = new Map();
   private onResult?: TaskCallback;
+  private persistPath: string;
 
-  constructor(agent: Agent, onResult?: TaskCallback) {
+  constructor(agent: Agent, onResult?: TaskCallback, persistDir?: string) {
     this.agent = agent;
     this.onResult = onResult;
+    const dir = persistDir ?? "/home/ubuntu/.claude-agent/memory";
+    this.persistPath = join(dir, "tasks.json");
+    this.loadFromDisk();
+  }
+
+  private loadFromDisk(): void {
+    try {
+      if (existsSync(this.persistPath)) {
+        const raw = readFileSync(this.persistPath, "utf-8");
+        const saved: ScheduledTask[] = JSON.parse(raw);
+        for (const task of saved) {
+          this.add(task);
+        }
+        info("scheduler", `Loaded ${saved.length} task(s) from disk`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError("scheduler", `Failed to load tasks from disk: ${msg}`);
+    }
+  }
+
+  private saveToDisk(): void {
+    try {
+      const dir = dirname(this.persistPath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      const tasks = [...this.taskDefs.values()];
+      writeFileSync(this.persistPath, JSON.stringify(tasks, null, 2));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError("scheduler", `Failed to save tasks to disk: ${msg}`);
+    }
   }
 
   add(task: ScheduledTask): void {
@@ -82,6 +118,8 @@ export class Scheduler {
       );
       this.tasks.set(task.id, scheduled);
     }
+
+    this.saveToDisk();
   }
 
   remove(id: string): boolean {
@@ -90,7 +128,11 @@ export class Scheduler {
       existing.stop();
       this.tasks.delete(id);
     }
-    return this.taskDefs.delete(id);
+    const removed = this.taskDefs.delete(id);
+    if (removed) {
+      this.saveToDisk();
+    }
+    return removed;
   }
 
   list(): ScheduledTask[] {
