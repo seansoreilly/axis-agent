@@ -51,10 +51,26 @@ The agent runs as a single Node.js process under systemd with security hardening
 - Limits: max 20 tasks, minimum 5-minute interval
 
 ### Integrations
-- **Google Calendar** — read events via iCal feed (fast) or Google Calendar API (full CRUD). Requires a Google service account.
-- **Gmail** — send and read emails via app password authentication (headless-compatible)
-- **Facebook** — post text and photos to a Facebook Page via Graph API. Photos are auto-optimized before posting (EXIF rotation, exposure/saturation/contrast adjustment, saliency-based smart crop to Facebook-optimal aspect ratios, sharpening). Use `/post` in Telegram after uploading photos.
-- **Google Contacts** — search, create, update, and list contacts with fuzzy/partial name matching via OAuth2.
+
+#### Zapier MCP
+
+The agent uses [Zapier MCP](https://www.npmjs.com/package/@anthropic-ai/mcp-server-zapier) as an integration layer for third-party services. Zapier only exposes tools for actions that the user has explicitly connected and enabled in their Zapier account — the agent cannot access any service the user hasn't authorized.
+
+This provides two key benefits:
+
+1. **Ease of connection** — Adding a new integration is as simple as enabling an action in the Zapier dashboard. No custom code, credential plumbing, or skill development needed.
+2. **Security** — Instead of storing individual OAuth tokens and API credentials per service on the server, the agent authenticates through a single Zapier API key. Zapier handles OAuth flows, token refresh, and credential storage on its side, reducing the attack surface.
+
+Currently connected tools (24):
+- **Google Calendar** — find events, retrieve by ID, find busy periods, find/get calendars
+- **Gmail** — find email, create draft, add label, archive, delete, get attachment
+- **Google Contacts** — find/create/update contact, add to groups, create group, upload photo
+- **Trello** — find action/board/label/list by ID, find card attachments
+
+#### Custom Skills
+
+For services not covered by Zapier or requiring deeper integration:
+- **Facebook** — post text and photos to a Facebook Page via Graph API. Photos are auto-optimized before posting (EXIF rotation, exposure/saturation/contrast adjustment, saliency-based smart crop, sharpening). Use `/post` in Telegram after uploading photos.
 - **Twilio** — send SMS, make voice calls, and manage phone numbers (AU1 region).
 
 ### Orchestration
@@ -260,9 +276,6 @@ scripts/
   daily_briefing.py   # Daily briefing script
   calendar/           # Google Calendar integration (Python)
 .claude/skills/
-  gmail/              # Send and read emails via app password
-  google-calendar/    # Full calendar CRUD via service account
-  google-contacts/    # Contact search, create, update with fuzzy matching
   facebook/           # Post text and photos to Facebook Page (with photo optimizer)
   twilio/             # SMS, voice calls, phone number management
   commit/             # Safe git commit with secret/PII leak prevention

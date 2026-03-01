@@ -76,10 +76,11 @@ ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/ag
 
 The agent's system prompt includes a decision framework for adding new integrations. When the agent needs a new capability, it evaluates options in priority order:
 
-1. **MCP server** — SDK-native tool provider. Config in `.mcp.json` (auto-loaded from cwd). Best option when one exists.
-2. **Community skill** — Pre-built `.claude/skills/` package. Must support headless auth (no OAuth browser flows).
-3. **Custom skill** — Hand-built in `.claude/skills/<name>/` with `SKILL.md`. Use existing gmail/google-calendar skills as templates.
-4. **One-off Bash** — For simple, non-recurring tasks.
+1. **Zapier MCP** — Pre-configured via `.mcp.json`. Provides 24 tools across Google Calendar, Gmail, Google Contacts, and Trello. Primary integration for Google services.
+2. **MCP server** — SDK-native tool provider. Config in `.mcp.json` (auto-loaded from cwd). Best option when one exists.
+3. **Community skill** — Pre-built `.claude/skills/` package. Must support headless auth (no OAuth browser flows).
+4. **Custom skill** — Hand-built in `.claude/skills/<name>/` with `SKILL.md`. Use existing facebook/twilio skills as templates.
+5. **One-off Bash** — For simple, non-recurring tasks.
 
 Key constraint: the agent runs headless under systemd, so only API keys / app passwords / service accounts work for auth. `allowedTools` includes `mcp__*` to permit any configured MCP server tools.
 
@@ -114,6 +115,7 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 | `google-service-account` | `/home/ubuntu/.claude-agent/google-service-account.json` |
 | `google-credentials` | `/home/ubuntu/.claude-agent/google-credentials.json` |
 | `google-contacts-token` | `/home/ubuntu/.claude-agent/google-contacts-token.json` |
+| `env-secrets` (ZAPIER_API_KEY) | `/home/ubuntu/agent/.env` (via EnvironmentFile) |
 
 **Workflows:**
 - **Sync secrets:** `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)
