@@ -1,6 +1,6 @@
 {
   "name": "claude-code-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Always-on AI agent powered by Claude Code Agent SDK with Telegram integration",
   "type": "module",
   "scripts": {
