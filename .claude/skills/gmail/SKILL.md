@@ -58,8 +58,12 @@ python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/triage.py --no-unsubscri
 
 **Behavior:**
 1. Fetches emails from INBOX via IMAP (using UIDs for stability)
-2. Classifies each email as important/unimportant using Claude Haiku
-3. Copies unimportant emails to `Auto-Archived` label, removes from inbox
-4. Attempts HTTP unsubscribe via `List-Unsubscribe` header (RFC 8058 one-click preferred, GET fallback, skips mailto-only)
+2. Applies safety guardrails — protected emails are never auto-archived:
+   - Thread replies (has `In-Reply-To` or `References` headers)
+   - Calendar invites (`text/calendar` MIME parts)
+   - Emails containing safety keywords: invoice, payment, receipt, booking, appointment, urgent, security alert, password reset, delivery, shipped, etc.
+3. Classifies each email as important/unimportant using Claude Haiku (with bulk-mail signals: `List-Unsubscribe`, `Precedence` headers)
+4. Copies unimportant emails to `Auto-Archived` label, removes from inbox
+5. Attempts HTTP unsubscribe via `List-Unsubscribe` header (RFC 8058 one-click preferred, GET fallback, skips mailto-only)
 
-**Output:** JSON with `summary` (counts, cost, tokens), `important` list, `unimportant` list, and `unsubscribe_results`
+**Output:** JSON with `summary` (counts, cost, tokens, protected count), `important` list, `unimportant` list, `unsubscribe_results`, and `telegram_summary` (pre-formatted Markdown for Telegram delivery)

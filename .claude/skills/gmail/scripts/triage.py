@@ -25,18 +25,31 @@ ENV_FILE = Path("/home/ubuntu/agent/.env")
 CREDS_FILE = Path("/home/ubuntu/agent/gmail_app_password.json")
 LABEL_NAME = "Auto-Archived"
 
+PROTECTED_KEYWORDS = [
+    "invoice", "payment", "receipt", "booking", "reservation",
+    "appointment", "urgent", "action required", "verify",
+    "security alert", "sign-in", "login attempt", "password reset",
+    "your order", "shipped", "delivery", "statement",
+]
+
 CLASSIFY_PROMPT = """Classify this email as either "important" or "unimportant".
 
 Important: personal messages, bills/invoices, appointments, action-required items,
-security alerts, delivery updates for recent orders, work-related correspondence.
+security alerts, delivery updates for recent orders, work-related correspondence,
+account notices, booking confirmations, legal or official correspondence.
 
 Unimportant: marketing, newsletters, promotional offers, social media notifications,
-automated digests, spam, mailing list bulk sends, "we miss you" re-engagement.
+automated digests, spam, mailing list bulk sends, "we miss you" re-engagement,
+survey requests, product announcements.
+
+Signals this is bulk/marketing mail:
+- List-Unsubscribe header present: {has_unsubscribe}
+- Precedence header: {precedence}
 
 From: {sender}
 Subject: {subject}
 Date: {date}
-Body (first 300 chars): {body}
+Body (first 400 chars): {body}
 
 Respond with ONLY a JSON object: {{"classification": "important" or "unimportant", "reason": "brief reason"}}"""
 
@@ -97,6 +110,14 @@ def get_body(msg):
     return ""
 
 
+def _has_calendar_invite(msg) -> bool:
+    """Check if any MIME part is text/calendar."""
+    for part in msg.walk():
+        if part.get_content_type() == "text/calendar":
+            return True
+    return False
+
+
 def fetch_emails(imap, count, unread_only):
     """Fetch emails using UIDs for stable references."""
     if unread_only:
@@ -118,22 +139,53 @@ def fetch_emails(imap, count, unread_only):
             "to": decode_str(msg["To"]),
             "subject": decode_str(msg["Subject"]),
             "date": msg["Date"],
-            "body": get_body(msg)[:300],
+            "body": get_body(msg)[:400],
             "list_unsubscribe": msg.get("List-Unsubscribe", ""),
             "list_unsubscribe_post": msg.get("List-Unsubscribe-Post", ""),
+            "in_reply_to": msg.get("In-Reply-To", ""),
+            "references": msg.get("References", ""),
+            "precedence": (msg.get("Precedence") or "").lower(),
+            "has_calendar_invite": _has_calendar_invite(msg),
         })
 
     return emails
 
 
+def is_protected(em: dict) -> tuple[bool, str]:
+    """Return (protected, reason). Protected emails are never auto-archived."""
+    # Part of a thread
+    if em.get("in_reply_to") or em.get("references"):
+        return True, "thread reply"
+
+    # Calendar invite
+    if em.get("has_calendar_invite"):
+        return True, "calendar invite"
+
+    # Safety keywords in subject or body
+    subject_lower = em.get("subject", "").lower()
+    body_lower = em.get("body", "").lower()
+    for kw in PROTECTED_KEYWORDS:
+        if kw in subject_lower or kw in body_lower:
+            return True, f"keyword: {kw}"
+
+    return False, ""
+
+
 def classify_emails(emails, client):
-    """Classify emails using Claude Haiku."""
+    """Classify emails using Claude Haiku, with protection overrides."""
     for em in emails:
+        protected, protect_reason = is_protected(em)
+        if protected:
+            em["protected"] = True
+            em["protect_reason"] = protect_reason
+
         prompt = CLASSIFY_PROMPT.format(
             sender=em["from"],
             subject=em["subject"],
             date=em["date"],
             body=em["body"],
+            has_unsubscribe="yes" if em.get("list_unsubscribe") else "no",
+            precedence=em.get("precedence") or "none",
         )
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -141,18 +193,21 @@ def classify_emails(emails, client):
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.content[0].text.strip()
-        # Extract JSON from response (Haiku may wrap it in markdown or text)
         json_match = re.search(r"\{[^}]+\}", text)
         try:
             result = json.loads(json_match.group()) if json_match else json.loads(text)
             em["classification"] = result.get("classification", "important")
             em["reason"] = result.get("reason", "")
         except (json.JSONDecodeError, AttributeError):
-            # Default to important (safe) if response isn't valid JSON
             em["classification"] = "important"
             em["reason"] = "Could not parse classification, defaulting to important"
         em["input_tokens"] = response.usage.input_tokens
         em["output_tokens"] = response.usage.output_tokens
+
+        # Protected emails are always kept regardless of Haiku's classification
+        if protected:
+            em["classification"] = "important"
+
     return emails
 
 
@@ -188,7 +243,6 @@ def try_unsubscribe(em):
     if not header:
         return "no_header"
 
-    # Extract URLs from header (format: <url1>, <url2>)
     urls = re.findall(r"<(https?://[^>]+)>", header)
     if not urls:
         return "mailto_only"
@@ -196,7 +250,6 @@ def try_unsubscribe(em):
     https_url = urls[0]
 
     try:
-        # RFC 8058 one-click: POST with List-Unsubscribe=One-Click-Unsubscribe
         if post_header and "One-Click" in post_header:
             resp = requests.post(
                 https_url,
@@ -209,7 +262,6 @@ def try_unsubscribe(em):
                 return "unsubscribed_oneclick"
             return f"oneclick_failed_{resp.status_code}"
 
-        # Fallback: GET on HTTPS URL
         resp = requests.get(https_url, timeout=15, allow_redirects=True)
         if resp.status_code < 400:
             return "unsubscribed_get"
@@ -232,6 +284,43 @@ def run_unsubscribe(emails):
             "status": status,
         })
     return results
+
+
+def format_telegram_summary(output: dict, dry_run: bool) -> str:
+    """Format triage results as Telegram-friendly Markdown."""
+    s = output["summary"]
+    mode = " (dry run)" if dry_run else ""
+    lines = [
+        f"*Email Triage{mode} Complete*",
+        f"Checked {s['total']} emails",
+        "",
+    ]
+
+    if s["important"] > 0:
+        lines.append(f"*Kept ({s['important']}):*")
+        for em in output["important"]:
+            subj = em["subject"][:55] + "..." if len(em["subject"]) > 55 else em["subject"]
+            tag = " [protected]" if em.get("protected") else ""
+            lines.append(f"  - {subj}{tag}")
+        lines.append("")
+
+    if s["unimportant"] > 0:
+        action = "Would archive" if dry_run else f"Archived"
+        lines.append(f"*{action} ({s['unimportant']}):*")
+        for em in output["unimportant"]:
+            subj = em["subject"][:55] + "..." if len(em["subject"]) > 55 else em["subject"]
+            lines.append(f"  - {subj}")
+        lines.append("")
+
+    unsub = output.get("unsubscribe_results", [])
+    if unsub:
+        success = [r for r in unsub if "unsubscribed" in r["status"]]
+        if success:
+            lines.append(f"*Unsubscribed from {len(success)} sender(s)*")
+            lines.append("")
+
+    lines.append(f"_Cost: ${s['cost_usd']:.4f}_")
+    return "\n".join(lines)
 
 
 def emit(data):
@@ -258,10 +347,12 @@ def main():
         emails = fetch_emails(imap, args.count, args.unread)
 
     if not emails:
-        emit({"emails": [], "summary": "No emails to triage"})
+        output = {"emails": [], "summary": "No emails to triage"}
+        output["telegram_summary"] = "No emails to triage."
+        emit(output)
         return
 
-    # Phase 2: Classify with Haiku
+    # Phase 2: Classify with Haiku (protection guardrails applied inside)
     client = get_anthropic_client()
     classify_emails(emails, client)
 
@@ -293,12 +384,18 @@ def main():
             "important": len(important),
             "unimportant": len(unimportant),
             "archived": len(archived),
+            "protected": len([e for e in emails if e.get("protected")]),
             "dry_run": args.dry_run,
             "cost_usd": round(cost, 6),
             "tokens": {"input": total_input, "output": total_output},
         },
         "important": [
-            {"from": e["from"], "subject": e["subject"], "reason": e["reason"]}
+            {
+                "from": e["from"],
+                "subject": e["subject"],
+                "reason": e["reason"],
+                **({"protected": True, "protect_reason": e["protect_reason"]} if e.get("protected") else {}),
+            }
             for e in important
         ],
         "unimportant": [
@@ -309,6 +406,8 @@ def main():
 
     if unsub_results:
         output["unsubscribe_results"] = unsub_results
+
+    output["telegram_summary"] = format_telegram_summary(output, args.dry_run)
 
     emit(output)
 
