@@ -18,6 +18,7 @@ rsync -avz --delete \
   --exclude node_modules \
   --exclude .env \
   --exclude .git \
+  --exclude logs \
   -e "ssh -i $SSH_KEY" \
   ./ "$REMOTE_HOST:$REMOTE_DIR/"
 
