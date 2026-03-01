@@ -61,7 +61,6 @@ python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/triage.py --no-unsubscri
 2. Applies safety guardrails — protected emails are never auto-archived:
    - Thread replies (has `In-Reply-To` or `References` headers)
    - Calendar invites (`text/calendar` MIME parts)
-   - Emails containing safety keywords: invoice, payment, receipt, booking, appointment, urgent, security alert, password reset, delivery, shipped, etc.
 3. Classifies each email as important/unimportant using Claude Haiku (with bulk-mail signals: `List-Unsubscribe`, `Precedence` headers)
 4. Copies unimportant emails to `Auto-Archived` label, removes from inbox
 5. Attempts HTTP unsubscribe via `List-Unsubscribe` header (RFC 8058 one-click preferred, GET fallback, skips mailto-only)

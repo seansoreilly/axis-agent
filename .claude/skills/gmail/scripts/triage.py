@@ -25,13 +25,6 @@ ENV_FILE = Path("/home/ubuntu/agent/.env")
 CREDS_FILE = Path("/home/ubuntu/agent/gmail_app_password.json")
 LABEL_NAME = "Auto-Archived"
 
-PROTECTED_KEYWORDS = [
-    "invoice", "payment", "receipt", "booking", "reservation",
-    "appointment", "urgent", "action required", "verify",
-    "security alert", "sign-in", "login attempt", "password reset",
-    "your order", "shipped", "delivery", "statement",
-]
-
 CLASSIFY_PROMPT = """Classify this email as either "important" or "unimportant".
 
 Important: personal messages, bills/invoices, appointments, action-required items,
@@ -160,13 +153,6 @@ def is_protected(em: dict) -> tuple[bool, str]:
     # Calendar invite
     if em.get("has_calendar_invite"):
         return True, "calendar invite"
-
-    # Safety keywords in subject or body
-    subject_lower = em.get("subject", "").lower()
-    body_lower = em.get("body", "").lower()
-    for kw in PROTECTED_KEYWORDS:
-        if kw in subject_lower or kw in body_lower:
-            return True, f"keyword: {kw}"
 
     return False, ""
 
