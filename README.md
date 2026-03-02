@@ -268,7 +268,6 @@ src/
   memory.ts           # Persistent file-based memory store
   scheduler.ts        # Cron-based task scheduling
   logger.ts           # Structured logging
-  trello-mcp-server.ts # Trello MCP server (stdio, used by Agent SDK)
 scripts/
   sync-secrets.sh     # Fetch secrets from Bitwarden, push to server via SCP
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
