@@ -3,6 +3,10 @@
     "zapier": {
       "command": "npx",
       "args": ["-y", "@anthropic-ai/mcp-server-zapier"]
+    },
+    "trello": {
+      "command": "node",
+      "args": ["dist/trello-mcp-server.js"]
     }
   }
 }

@@ -61,11 +61,14 @@ This provides two key benefits:
 1. **Ease of connection** — Adding a new integration is as simple as enabling an action in the Zapier dashboard. No custom code, credential plumbing, or skill development needed.
 2. **Security** — Instead of storing individual OAuth tokens and API credentials per service on the server, the agent authenticates through a single Zapier API key. Zapier handles OAuth flows, token refresh, and credential storage on its side, reducing the attack surface.
 
-Currently connected tools (24):
+Currently connected tools:
 - **Google Calendar** — find events, retrieve by ID, find busy periods, find/get calendars
 - **Gmail** — find email, create draft, add label, archive, delete, get attachment
 - **Google Contacts** — find/create/update contact, add to groups, create group, upload photo
-- **Trello** — find action/board/label/list by ID, find card attachments
+
+#### Native Trello MCP
+
+Direct Trello API integration via a custom MCP server (`src/trello-mcp-server.ts`). Supports read and write operations: list/search boards, lists, and cards; create/update/archive cards; add comments and checklists; manage labels. Authenticated via API key + token (env vars `TRELLO_API_KEY`, `TRELLO_API_TOKEN`).
 
 #### Custom Skills
 
