@@ -43,7 +43,22 @@ Scan all staged file diffs (`git diff --cached`) for personal information that s
 
 If PII is found in code/config files (not documentation that intentionally references it), warn the user and list what was found. Ask for confirmation before proceeding.
 
-## Step 4: Git commit
+## Step 4: Update README.md
+
+If any source files changed (not just docs/config), review `README.md` to ensure it accurately reflects the current codebase. Check for:
+
+- **Features**: New commands, integrations, or capabilities not listed
+- **Project Structure**: New files in `src/`, `scripts/`, `.claude/skills/`, or other directories not reflected in the file tree
+- **Architecture**: Changes to how components connect or new components added
+- **Commands table**: New Telegram commands or HTTP endpoints not documented
+- **Dependencies**: New major dependencies or removed ones
+- **Configuration**: New environment variables or config options
+
+Read the key source files (`src/agent.ts`, `src/telegram.ts`, `src/index.ts`, `src/memory.ts`, `package.json`, `.mcp.json`) and compare against what the README says. Update any sections that are outdated or incomplete. Keep the existing style and tone.
+
+If no README updates are needed, skip this step.
+
+## Step 5: Git commit
 
 - Run `git status` to show what will be committed
 - Stage all changes with `git add -A`
@@ -51,7 +66,7 @@ If PII is found in code/config files (not documentation that intentionally refer
 - Write a clear, concise commit message summarizing the changes
 - Commit (do NOT use `--no-verify`)
 
-## Step 5: Git push
+## Step 6: Git push
 
 - Push to the current branch's remote tracking branch
 - If no upstream is set, push with `-u origin <branch>`
