@@ -24,6 +24,7 @@ export class Scheduler {
   private taskDefs: Map<string, ScheduledTask> = new Map();
   private onResult?: TaskCallback;
   private persistPath: string;
+  private running = false;
 
   constructor(agent: Agent, onResult?: TaskCallback, persistDir?: string) {
     this.agent = agent;
@@ -100,6 +101,11 @@ export class Scheduler {
       const scheduled = cron.schedule(
         task.schedule,
         async () => {
+          if (this.running) {
+            info("scheduler", `Skipping task ${task.id} — another task is running`);
+            return;
+          }
+          this.running = true;
           info("scheduler", `Running task: ${task.name} (${task.id})`);
           try {
             const result = await this.agent.run(task.prompt);
@@ -112,6 +118,8 @@ export class Scheduler {
             const msg = err instanceof Error ? err.message : String(err);
             logError("scheduler", `Task ${task.id} failed: ${msg}`);
             this.onResult?.(task.id, `Task failed: ${msg}`);
+          } finally {
+            this.running = false;
           }
         },
         { timezone: "Australia/Melbourne" }
