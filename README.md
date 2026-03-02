@@ -12,7 +12,7 @@ An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.
 | **Always up to date** | Inherits Claude Code's tools, models, and capabilities as they ship | Must wait for OpenClaw maintainers to integrate updates |
 | **Tool ecosystem** | Full Claude Code toolset (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task) + MCP servers | Custom skills system (ClawHub — with known supply-chain risks from malicious skills) |
 | **Security** | Anthropic-managed sandboxing, no third-party skill registry | User-managed Docker sandbox recommended; 386 malicious skills found on ClawHub (Feb 2026) |
-| **Complexity** | ~500 lines of TypeScript, single Node.js process | Full Docker Compose stack, 4+ GB RAM recommended |
+| **Complexity** | ~2,300 lines of TypeScript, single Node.js process | Full Docker Compose stack, 4+ GB RAM recommended |
 | **LLM lock-in** | Claude only | Multi-provider (Claude, GPT, DeepSeek) |
 | **Messaging** | Telegram + HTTP webhook | 10+ platforms (WhatsApp, Slack, Discord, etc.) |
 
@@ -41,8 +41,10 @@ The agent runs as a single Node.js process under systemd with security hardening
 - **Media support**: photos (vision), voice messages (with duration), and document uploads
 - **Progress indicators**: typing status, ETA based on recent response times, periodic updates every 60s
 - **Inline keyboards**: retry and new session buttons on every response
-- **Persistent memory**: `/remember key=value`, `/forget key`, `/memories`
+- **Persistent memory**: `/remember key=value`, `/forget key`, `/memories` — structured facts with categories (personal, work, preference, system, general) and access tracking
 - **Reply context**: reply to a specific message to include it as context
+- **Voice messages**: voice recordings passed to the agent with duration metadata
+- **Stale session recovery**: automatically retries without session ID if a resumed session fails
 
 ### Scheduled Tasks
 - Create via Telegram (`/schedule add`) or HTTP API
@@ -75,6 +77,15 @@ Direct Trello API integration via a custom MCP server (`src/trello-mcp-server.ts
 For services not covered by Zapier or requiring deeper integration:
 - **Facebook** — post text and photos to a Facebook Page via Graph API. Photos are auto-optimized before posting (EXIF rotation, exposure/saturation/contrast adjustment, saliency-based smart crop, sharpening). Use `/post` in Telegram after uploading photos.
 - **Twilio** — send SMS, make voice calls, and manage phone numbers (AU1 region).
+- **Bitwarden** — add, update, or rotate secrets in the Bitwarden vault and sync to the server.
+
+### Memory System
+- Structured facts with categories: personal, work, preference, system, general
+- Automatic category inference from key names
+- Migration from legacy string-based format on first load
+- Context injection sorted by recency, capped at 30 facts
+- Session records with cost tracking, turn counts, and summaries
+- Auto-generated session summaries (via Haiku) for sessions costing ≥$0.05, injected when resuming
 
 ### Orchestration
 - Spawns parallel subagents for complex multi-part tasks
@@ -259,31 +270,33 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 
 ```
 src/
-  index.ts            # Entry point - starts all services
-  config.ts           # Environment config loader
-  agent.ts            # Wraps Claude Agent SDK query() calls
-  gateway.ts          # Fastify HTTP server (webhook + task management)
-  telegram.ts         # Telegram Bot API connector (commands, media, inline keyboards)
-  telegram.test.ts    # Tests (vitest)
-  memory.ts           # Persistent file-based memory store
-  scheduler.ts        # Cron-based task scheduling
-  logger.ts           # Structured logging
+  index.ts              # Entry point - starts all services
+  config.ts             # Environment config loader
+  agent.ts              # Wraps Claude Agent SDK query() calls
+  gateway.ts            # Fastify HTTP server (webhook + task management)
+  telegram.ts           # Telegram Bot API connector (commands, media, inline keyboards)
+  telegram.test.ts      # Tests (vitest)
+  memory.ts             # Structured memory store (categorized facts, session records)
+  scheduler.ts          # Cron-based task scheduling
+  logger.ts             # Structured logging
+  trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
 scripts/
-  sync-secrets.sh     # Fetch secrets from Bitwarden, push to server via SCP
+  sync-secrets.sh       # Fetch secrets from Bitwarden, push to server via SCP
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
-  rollback-secrets.sh # Restore server secrets from local backup
-  deploy-self.sh      # Self-deploy (runs on the server)
-  health-check.sh     # Local health monitoring (Tailscale, AWS, SSH, service)
-  self-heal.sh        # Auto-restart service if inactive (systemd timer)
-  remember.js         # CLI for persistent fact CRUD
-  daily_briefing.py   # Daily briefing script
-  calendar/           # Google Calendar integration (Python)
+  rollback-secrets.sh   # Restore server secrets from local backup
+  deploy-self.sh        # Self-deploy (runs on the server)
+  health-check.sh       # Local health monitoring (Tailscale, AWS, SSH, service)
+  self-heal.sh          # Auto-restart service if inactive (systemd timer)
+  update-sdk.sh         # Daily cron to update Agent SDK and restart if changed
+  remember.js           # CLI for persistent fact CRUD
+  daily_briefing.py     # Daily briefing script
 .claude/skills/
-  facebook/           # Post text and photos to Facebook Page (with photo optimizer)
-  twilio/             # SMS, voice calls, phone number management
-  commit/             # Safe git commit with secret/PII leak prevention
+  facebook/             # Post text and photos to Facebook Page (with photo optimizer)
+  twilio/               # SMS, voice calls, phone number management
+  commit/               # Safe git commit with secret/PII leak prevention + README check
+  bitwarden/            # Secret management via Bitwarden vault
 .github/workflows/
-  health-check.yml    # GitHub Actions health monitoring (every 30 min)
+  health-check.yml      # GitHub Actions health monitoring (every 30 min)
 systemd/
   claude-agent.service  # Systemd unit file with security hardening
 deploy.sh               # Deploy from local to remote server
