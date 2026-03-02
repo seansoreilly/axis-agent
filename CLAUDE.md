@@ -145,6 +145,19 @@ The `--generate-notes` flag auto-generates release notes from commit messages si
 
 **Important:** Always bump the version as part of the commit workflow. Do not create commits without considering whether a version bump is needed.
 
+## Learnings
+
+Accumulated knowledge is stored in `.claude/learnings/`. **Always update these files when you discover something new:**
+
+- `.claude/learnings/integrations.md` — Adding integrations (MCP servers, Zapier, skills, APIs)
+- `.claude/learnings/deployment.md` — Deployment, systemd, infrastructure, Bitwarden sync
+- `.claude/learnings/sdk.md` — Claude Agent SDK patterns and gotchas
+- `.claude/learnings/testing.md` — Testing patterns and pitfalls
+
+**When to update:** After resolving a non-obvious issue, discovering a gotcha, finding a better pattern, or completing a new integration. Add the learning to the appropriate file (or create a new one). Keep entries concise and actionable — future sessions depend on these.
+
+**When NOT to update:** Don't record transient debugging steps, obvious patterns, or information already in this file.
+
 ## Security Model
 
 - Gateway is localhost-only (Tailscale provides network access control)
