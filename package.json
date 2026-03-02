@@ -1,6 +1,6 @@
 {
   "name": "claude-code-agent",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Always-on AI agent powered by Claude Code Agent SDK with Telegram integration",
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.63",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "cron-parser": "^5.5.0",
     "fastify": "^5.2.0",
     "node-cron": "^3.0.3",
