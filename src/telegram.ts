@@ -1,4 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
+import { unlinkSync } from "node:fs";
 import type { Agent, AgentResult } from "./agent.js";
 import type { Memory } from "./memory.js";
 import type { Scheduler } from "./scheduler.js";
@@ -27,6 +28,7 @@ interface UserState {
   requestCount: number;
   abortController?: AbortController;
   recentPhotos: Array<{ path: string; timestamp: number }>;
+  tempFiles: string[];
 }
 
 export class TelegramIntegration {
@@ -59,7 +61,7 @@ export class TelegramIntegration {
   private getState(userId: number): UserState {
     let state = this.userState.get(userId);
     if (!state) {
-      state = { totalCostUsd: 0, requestCount: 0, recentPhotos: [] };
+      state = { totalCostUsd: 0, requestCount: 0, recentPhotos: [], tempFiles: [] };
       this.userState.set(userId, state);
     }
     return state;
@@ -227,8 +229,8 @@ export class TelegramIntegration {
         const tmpPath = `/tmp/telegram_photo_${Date.now()}.${ext}`;
         const { writeFileSync } = await import("node:fs");
         writeFileSync(tmpPath, downloaded.buffer);
-        // Track for /post command
         const state = this.getState(userId!);
+        state.tempFiles.push(tmpPath);
         state.recentPhotos.push({ path: tmpPath, timestamp: Date.now() });
         const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
         state.recentPhotos = state.recentPhotos
@@ -246,6 +248,8 @@ export class TelegramIntegration {
         const tmpPath = `/tmp/telegram_voice_${Date.now()}.ogg`;
         const { writeFileSync } = await import("node:fs");
         writeFileSync(tmpPath, downloaded.buffer);
+        const state = this.getState(userId!);
+        state.tempFiles.push(tmpPath);
         text = `[Voice message: ${tmpPath}, duration: ${msg.voice.duration}s]\nThe user sent a voice message. Use the Bash tool to transcribe or process it.\n\n${text}`.trim();
       }
       if (!text) text = "Please process this voice message.";
@@ -360,6 +364,12 @@ export class TelegramIntegration {
       clearInterval(typingInterval);
       this.processingUsers.delete(userId);
       state.abortController = undefined;
+
+      // Clean up temp files (photos, voice messages)
+      for (const tmpPath of state.tempFiles) {
+        try { unlinkSync(tmpPath); } catch { /* already deleted */ }
+      }
+      state.tempFiles = [];
     }
   }
 
