@@ -78,6 +78,7 @@ For services not covered by Zapier or requiring deeper integration:
 - **Facebook** — post text and photos to a Facebook Page via Graph API. Photos are auto-optimized before posting (EXIF rotation, exposure/saturation/contrast adjustment, saliency-based smart crop, sharpening). Use `/post` in Telegram after uploading photos.
 - **Twilio** — send SMS, make voice calls, and manage phone numbers (AU1 region).
 - **Bitwarden** — add, update, or rotate secrets in the Bitwarden vault and sync to the server.
+- **Gmail** — fetch, evaluate, archive, and unsubscribe from emails via IMAP with incremental dual-UID watermark triage.
 
 ### Memory System
 - Structured facts with categories: personal, work, preference, system, general
@@ -91,6 +92,7 @@ For services not covered by Zapier or requiring deeper integration:
 - Spawns parallel subagents for complex multi-part tasks
 - Chooses model tier per subtask (Opus for reasoning, Sonnet for coding, Haiku for lookups)
 - Structured capability routing for adding new integrations (MCP servers → community skills → custom skills → one-off Bash)
+- Autonomous skill creation — the agent can generate new skills from conversation using a structured template and learning log
 
 ### Self-Modification
 - The agent can edit its own source code and redeploy via `scripts/deploy-self.sh`
@@ -293,8 +295,10 @@ scripts/
 .claude/skills/
   facebook/             # Post text and photos to Facebook Page (with photo optimizer)
   twilio/               # SMS, voice calls, phone number management
+  gmail/                # Gmail inbox triage via IMAP (fetch, archive, unsubscribe)
   commit/               # Safe git commit with secret/PII leak prevention + README check
   bitwarden/            # Secret management via Bitwarden vault
+  skill-generator/      # Meta-skill: structured template + learning log for creating new skills
 .github/workflows/
   health-check.yml      # GitHub Actions health monitoring (every 30 min)
 systemd/

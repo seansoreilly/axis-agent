@@ -91,6 +91,23 @@ Personal data stored at `~/.openclaw/workspace` (skills, prompts, memories). Sav
 - Bleeping Computer found real supply-chain risks in skills marketplace but limited signs of large-scale criminal exploitation
 - Global adoption including China (Alibaba, Tencent, ByteDance integrating with local messaging apps and DeepSeek)
 
+## Top 10 Integrations
+
+| # | Category | Integration | What it does |
+|---|----------|-------------|--------------|
+| 1 | **Messaging** | WhatsApp, Telegram, Signal, Discord, iMessage | Primary chat interfaces for interacting with the agent |
+| 2 | **Messaging (Enterprise)** | Microsoft Teams | Enterprise-ready integration with org accounts and channels |
+| 3 | **Productivity** | Notion, Obsidian, Apple Notes/Reminders, Things 3 | Task and note management from a single conversation |
+| 4 | **Google Suite** | Gmail, Google Calendar, Google Drive | Calendar, email, and file management via the "gog" skill |
+| 5 | **Project Management** | Trello, Linear, Jira | Autonomous project board management |
+| 6 | **Dev/DevOps** | GitHub | Repo management, issues, PR reviews, workflow automation via chat |
+| 7 | **Local AI** | Ollama | Run on local models for coding, reasoning, and tool execution |
+| 8 | **Infrastructure** | Cloudflare Workers (Moltworker) | Serverless, always-on edge deployment |
+| 9 | **Smart Home** | Home Assistant | Control devices via natural language |
+| 10 | **Voice/Telephony** | Twilio, Telnyx, Plivo | Outbound notifications and multi-turn phone conversations |
+
+**Ecosystem stats:** 50+ integrations, 5,400+ community skills in the official registry.
+
 ## Replicating with Claude Code SDK
 
 To replicate OpenClaw's core functionality using Claude Code on Lightsail, you'd need:
@@ -100,6 +117,75 @@ To replicate OpenClaw's core functionality using Claude Code on Lightsail, you'd
 3. **Tool/skill execution layer** — Claude Code already has file read/write, shell execution, web search
 4. **Persistent memory** — File-based or database-backed memory system
 5. **Scheduling** — Cron-like functionality for recurring tasks, reminders, webhook endpoints
+
+### Status: All 5 Implemented
+
+| # | Component | Our Implementation |
+|---|---|---|
+| 1 | **Always-on Gateway** | `src/gateway.ts` (Fastify, localhost:8080) + `src/index.ts` entrypoint, systemd service on Lightsail |
+| 2 | **Messaging integrations** | `src/telegram.ts` — Telegram Bot API polling mode with commands, photos, voice, documents |
+| 3 | **Tool/skill execution** | Claude Code SDK `query()` with `bypassPermissions` + skills in `.claude/skills/` (facebook, gmail, twilio, bitwarden, commit) + Zapier MCP + Trello MCP |
+| 4 | **Persistent memory** | `src/memory.ts` — JSON file store at `~/.claude-agent/memory/store.json` (key-value facts + session records) |
+| 5 | **Scheduling** | `src/scheduler.ts` — `node-cron`, Australia/Melbourne timezone, max 20 tasks, min 5-min interval |
+
+### Integration Parity with OpenClaw Top 10
+
+| # | OpenClaw Integration | Our Agent | Gap |
+|---|---|---|---|
+| 1 | Telegram | `src/telegram.ts` | **Parity** |
+| 2 | Gmail | `.claude/skills/gmail/` + Zapier MCP | **Parity** |
+| 3 | Google Calendar | Zapier MCP (`mcp__zapier__*`) | **Parity** |
+| 4 | Google Contacts | Zapier MCP | **Parity** |
+| 5 | Trello | `.mcp.json` → `trello` MCP server | **Parity** |
+| 6 | Facebook | `.claude/skills/facebook/` | **Parity** |
+| 7 | Twilio (SMS/Voice) | `.claude/skills/twilio/` | **Parity** |
+| 8 | WhatsApp, Discord, Signal, Teams | Not implemented | **Gap** — additional messaging channels |
+| 9 | Notion, Obsidian, Linear, Jira | Not implemented | **Gap** — productivity/PM tools |
+| 10 | Home Assistant, Ollama | Not implemented | **Gap** — smart home, local AI |
+
+## Top 5 OpenClaw Features We Don't Have
+
+### 1. Browser Automation (Playwright/Puppeteer)
+OpenClaw has built-in headless browser control — navigate pages, fill forms, click buttons, extract data, take screenshots, generate PDFs. Uses Playwright under the hood but abstracts it with an AI-friendly "Snapshot" system where the LLM understands page structure and decides next steps automatically. Two modes: Chrome Extension (relay to user's browser) and headless (server-side, isolated).
+
+**Gap**: Our agent can `curl` and `WebFetch` but can't interact with dynamic pages, fill forms, or extract from JS-rendered sites. No browser instance available.
+
+**Effort**: Medium. Could add via Playwright MCP server (already available in our local Claude Code setup) or the `browserless-agent` skill from ClawHub.
+
+### 2. Autonomous Skill Generation (Self-Improving Agent)
+OpenClaw can write new skills for itself on demand — user describes a capability in chat, and the agent generates a `SKILL.md` + supporting code, saves it to the skills directory, and starts using it immediately. Also captures errors, corrections, and learnings to improve over time.
+
+**Gap**: Our agent can self-deploy and edit its own code, but doesn't have a structured workflow for generating new skills from conversation. It could technically do it (has Write + Bash + self-deploy), but there's no skill template system or error-learning loop.
+
+**Effort**: Low-Medium. The primitives exist (self-deploy, skills directory, Write tool). Need a system prompt addition that teaches the agent the skill creation pattern + a learning/corrections log.
+
+### 3. Proactive Agent / Heartbeat System
+OpenClaw has a "proactive-agent" skill with a heartbeat system — the agent periodically checks in, reviews pending tasks, anticipates user needs based on context and memory, and proactively reaches out via messaging. Not just cron jobs (which we have), but intelligent context-aware check-ins.
+
+**Gap**: Our scheduler runs prompts on cron schedules, but it's user-configured and static. No intelligent heartbeat that reviews memory/context and decides whether to proactively message the user. No "morning briefing" or "you have a meeting in 30 minutes" unprompted alerts.
+
+**Effort**: Medium. Could build on existing `Scheduler` + `Memory` — add a heartbeat cron that runs a meta-prompt asking the agent to review calendar, pending tasks, and recent context to decide if anything warrants a proactive message.
+
+### 4. Webhook Triggers (Inbound Event Processing)
+OpenClaw supports inbound webhooks — external services POST events to the agent, which triggers automated responses. Examples: GitHub push webhook triggers a code review, Stripe payment webhook triggers a notification, form submission triggers data processing.
+
+**Gap**: Our gateway has `POST /webhook` but it's a simple prompt relay — no event parsing, no per-source routing, no registered webhook handlers. External services can't trigger contextual agent actions.
+
+**Effort**: Medium. Extend `Gateway` with webhook registration (source → prompt template mapping), event parsing, and response routing back through Telegram.
+
+### 5. Agent-to-Agent Communication (Multi-Agent Network)
+OpenClaw agents can communicate with each other — one user's agent can delegate tasks to or exchange information with another agent. This led to "Moltbook," a social network for AI agents. Enables collaborative workflows across multiple agent instances.
+
+**Gap**: Our agent is single-instance, single-user. No protocol for agent-to-agent messaging or task delegation across instances.
+
+**Effort**: High. Would need a discovery/registry mechanism, authentication between agents, message protocol, and trust model. Lowest priority — niche use case for a personal agent.
+
+### Priority Ranking (by value-to-effort ratio)
+1. **Autonomous Skill Generation** — low effort, high leverage (agent becomes self-extending)
+2. **Proactive Agent / Heartbeat** — medium effort, high daily utility
+3. **Browser Automation** — medium effort, unlocks entire category of web tasks
+4. **Webhook Triggers** — medium effort, enables event-driven workflows
+5. **Agent-to-Agent Communication** — high effort, niche value
 
 ## Recent News (late Feb 2026)
 

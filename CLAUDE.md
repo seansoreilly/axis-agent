@@ -79,7 +79,7 @@ The agent's system prompt includes a decision framework for adding new integrati
 1. **Zapier MCP** — Pre-configured via `.mcp.json`. Provides tools across Google Calendar, Gmail, and Google Contacts. Primary integration for Google services.
 2. **MCP server** — SDK-native tool provider. Config in `.mcp.json` (auto-loaded from cwd). Best option when one exists.
 3. **Community skill** — Pre-built `.claude/skills/` package. Must support headless auth (no OAuth browser flows).
-4. **Custom skill** — Hand-built in `.claude/skills/<name>/` with `SKILL.md`. Use existing facebook/twilio skills as templates.
+4. **Custom skill** — Hand-built in `.claude/skills/<name>/` with `SKILL.md`. Use existing facebook/twilio skills as templates. The `skill-generator` meta-skill (`.claude/skills/skill-generator/SKILL.md`) provides a structured template and validation checklist for creating new skills. Past learnings are logged in `LEARNINGS.md`.
 5. **One-off Bash** — For simple, non-recurring tasks.
 
 Key constraint: the agent runs headless under systemd, so only API keys / app passwords / service accounts work for auth. `allowedTools` includes `mcp__*` to permit any configured MCP server tools.
