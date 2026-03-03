@@ -80,6 +80,10 @@ For services not covered by Zapier or requiring deeper integration:
 - **Bitwarden** — add, update, or rotate secrets in the Bitwarden vault and sync to the server.
 - **Gmail** — fetch, evaluate, archive, and unsubscribe from emails via IMAP with incremental dual-UID watermark triage.
 
+#### Playwright MCP (Browser Automation)
+
+Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-mcp). Enables the agent to navigate JS-rendered pages, fill forms, click buttons, take screenshots, and generate PDFs — things WebFetch can't do. The agent automatically chooses WebFetch for static content and Playwright for dynamic/interactive pages.
+
 ### Memory System
 - Structured facts with categories: personal, work, preference, system, general
 - Automatic category inference from key names
