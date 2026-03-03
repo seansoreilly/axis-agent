@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import type { Agent } from "./agent.js";
+import type { Memory } from "./memory.js";
 import type { Scheduler, ScheduledTask } from "./scheduler.js";
 import { info } from "./logger.js";
 
@@ -16,11 +17,31 @@ interface ScheduleBody {
   enabled?: boolean;
 }
 
+interface OwnTracksLocation {
+  _type: string;
+  lat: number;
+  lon: number;
+  tst: number;
+  acc?: number;
+  alt?: number;
+  vel?: number;
+  batt?: number;
+  conn?: string;
+  [key: string]: unknown;
+}
+
+interface GatewayOptions {
+  port: number;
+  agent: Agent;
+  scheduler: Scheduler;
+  memory?: Memory;
+  owntracksToken?: string;
+}
+
 export async function createGateway(
-  port: number,
-  agent: Agent,
-  scheduler: Scheduler
+  opts: GatewayOptions
 ): Promise<ReturnType<typeof Fastify>> {
+  const { port, agent, scheduler, memory, owntracksToken } = opts;
   const app = Fastify({ bodyLimit: 10_240 });
 
   app.get("/health", async () => ({
@@ -80,8 +101,41 @@ export async function createGateway(
     return { ok: true };
   });
 
-  await app.listen({ port, host: "127.0.0.1" });
-  info("gateway", `Listening on port ${port}`);
+  // OwnTracks location ingestion (only if token is configured)
+  if (owntracksToken && memory) {
+    app.post<{ Body: OwnTracksLocation }>("/owntracks", async (request, reply) => {
+      const auth = request.headers.authorization;
+      if (!auth || auth !== `Bearer ${owntracksToken}`) {
+        return reply.status(401).send({ error: "unauthorized" });
+      }
+
+      const body = request.body;
+      if (!body || body._type !== "location" || typeof body.lat !== "number" || typeof body.lon !== "number") {
+        return reply.status(400).send([]);
+      }
+
+      const location = {
+        lat: body.lat,
+        lon: body.lon,
+        accuracy: body.acc,
+        altitude: body.alt,
+        velocity: body.vel,
+        battery: body.batt,
+        connection: body.conn,
+        timestamp: new Date(body.tst * 1000).toISOString(),
+        receivedAt: new Date().toISOString(),
+      };
+
+      memory.setFact("current-location", JSON.stringify(location), "personal");
+      info("gateway", `Location updated: ${body.lat},${body.lon} (acc: ${body.acc ?? "?"}m)`);
+
+      return [];
+    });
+    info("gateway", "OwnTracks endpoint enabled");
+  }
+
+  await app.listen({ port, host: "0.0.0.0" });
+  info("gateway", `Listening on 0.0.0.0:${port}`);
 
   return app;
 }
