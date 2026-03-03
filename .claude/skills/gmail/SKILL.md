@@ -6,7 +6,7 @@ tags: [gmail, email, triage]
 
 # Gmail Email Triage
 
-Triage Gmail inbox using IMAP. Fetches recent emails, lets the agent evaluate importance, then archives or unsubscribes from unimportant ones. Supports incremental backlog processing via offset pagination and state tracking.
+Triage Gmail inbox using IMAP. Fetches emails, lets the agent evaluate importance, then archives or unsubscribes from unimportant ones. Uses UID-based watermark for stable progress tracking that's immune to inbox churn (new arrivals, manual moves, filter actions).
 
 Credentials are loaded from `/home/ubuntu/agent/gmail_app_password.json`:
 ```json
@@ -16,21 +16,30 @@ Credentials are loaded from `/home/ubuntu/agent/gmail_app_password.json`:
 ## Fetch emails
 
 ```bash
-python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py fetch --count 10 --offset 0
-python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py fetch --count 10 --offset 20 --headers-only
+# Newest 10 (no cursor, for ad-hoc use)
+python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py fetch --count 10
+
+# Backlog: 10 emails with UIDs below the watermark (older, unprocessed)
+python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py fetch --count 10 --below-uid 45000 --headers-only
+
+# New arrivals: emails with UIDs above the watermark (arrived since last run)
+python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py fetch --count 10 --above-uid 45000
 ```
 
 **Arguments:**
-- `--count` (optional, default 5): Number of emails to fetch
-- `--offset` (optional, default 0): Skip N most recent emails (for pagination through backlog)
-- `--headers-only` (optional): Fetch headers only — skips body/snippet extraction for faster, cheaper backlog processing
+- `--count` (optional, default 10): Number of emails to fetch
+- `--below-uid` (optional): Fetch emails with UID below this value — for working through backlog (oldest-first within batch)
+- `--above-uid` (optional): Fetch emails with UID above this value — for catching new arrivals
+- `--headers-only` (optional): Fetch headers only — skips body/snippet for faster, cheaper backlog processing
 
 **Output:** JSON object with:
 - `emails`: Array of email objects (`message_id`, `uid`, `subject`, `from`, `date`, `labels`, `has_unsubscribe`, `unsubscribe_link`, and `snippet` if not headers-only)
-- `total_inbox`: Total number of emails in INBOX
-- `offset`: The offset used
-- `count`: Number of emails returned
-- `backlog_complete`: `true` when offset exceeds total (no more emails to process)
+- `total_inbox`: Total number of emails currently in INBOX
+- `matched`: Number of emails matching the UID criteria
+- `count`: Number of emails returned in this batch
+- `remaining`: Emails matching criteria not yet fetched
+- `mode`: `"backlog"`, `"new"`, or `"latest"`
+- `backlog_complete`: `true` when no more emails below the watermark
 
 ## Archive an email
 
@@ -60,30 +69,43 @@ python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py unsubscr
 
 **Output:** JSON with `success`, `message_id`, `label`, `unsubscribe_method` ("https", "mailto", or "none")
 
-## State tracking (for incremental triage)
+## State tracking (UID watermark)
 
-Track progress through the inbox backlog across runs.
+Track progress through the inbox using stable IMAP UIDs. UIDs are immutable — they don't shift when emails are added, removed, or moved.
 
 ```bash
 python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py state
-python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py advance --by 10
+python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py watermark --set 45000
 python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py reset
 ```
 
 **Commands:**
-- `state` — Print current state (`offset`, `last_run`, `total_processed`)
-- `advance --by N` — Increment offset by N after processing a batch
-- `reset` — Reset offset to 0 (start over from newest)
+- `state` — Print current state (`watermark_uid`, `last_run`, `total_processed`)
+- `watermark --set <uid>` — Set the UID watermark (the boundary between processed and unprocessed)
+- `reset` — Clear the watermark (re-initializes on next run)
 
 **State file:** `/home/ubuntu/.claude-agent/email-triage-state.json`
 
 ## Triage workflow (incremental)
 
-1. Run `state` to get the current offset
-2. Run `fetch --count 10 --offset <offset> --headers-only` (use `--headers-only` for backlog, omit for recent emails)
-3. If `backlog_complete` is true → report "backlog complete", run `reset`, switch to maintenance (offset 0, no headers-only)
-4. Evaluate each email's importance based on subject, sender (and snippet if available)
-5. For unimportant emails with unsubscribe links → run `unsubscribe`
-6. For unimportant emails without unsubscribe → run `archive`
-7. Run `advance --by <number_kept>` — advance by the number of emails you **kept** (not the batch size), because archived/unsubscribed emails leave the INBOX and shift positions down
-8. Report progress: "Processed <count> emails at offset <offset> of ~<total_inbox> (kept <n>, archived <n>, unsubscribed <n>)"
+Each run does TWO passes:
+
+### Pass 1: New arrivals (above watermark)
+1. Run `state` to get `watermark_uid`
+2. If watermark is null (first run): run `fetch --count 10` to get the newest emails. Set watermark to the **lowest UID** in the batch. Process and done.
+3. Run `fetch --count 10 --above-uid <watermark_uid>` to catch new emails
+4. If emails returned: evaluate, archive/unsubscribe as needed, then set watermark to the **highest UID** in the batch
+5. If no emails: no new mail since last run, skip to pass 2
+
+### Pass 2: Backlog (below watermark)
+6. Run `fetch --count 10 --below-uid <watermark_uid> --headers-only`
+7. If `backlog_complete` is true → report "backlog complete", done
+8. Evaluate each email based on subject and sender
+9. Archive/unsubscribe as needed
+10. Set watermark to the **lowest UID** in the batch (moves watermark down through backlog)
+11. Report progress: "Processed <count> backlog emails, <remaining> remaining"
+
+### Why this works
+- **New emails** get UIDs above the watermark → always caught in pass 1
+- **Manual moves/archives** just remove UIDs from INBOX → no position shift, no skipping
+- **The watermark only moves**: up (to cover new arrivals) or down (to work through backlog)
