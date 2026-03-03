@@ -2,7 +2,8 @@
 """
 Gmail email triage via IMAP — fetch, archive, unsubscribe, and track progress.
 
-Uses UID-based watermark for stable cursor tracking (immune to inbox churn).
+Uses dual UID watermarks for stable cursor tracking (immune to inbox churn).
+high_uid = newest processed, low_uid = oldest processed. Range [low, high] = done.
 
 Usage:
   python3 email_triage.py fetch --count 10
@@ -11,7 +12,7 @@ Usage:
   python3 email_triage.py archive --message-id "<id>" --label "Auto-Archive"
   python3 email_triage.py unsubscribe --message-id "<id>" --label "Auto-Unsubscribe"
   python3 email_triage.py state
-  python3 email_triage.py watermark --set 45000
+  python3 email_triage.py watermark --high 47000 --low 45000
   python3 email_triage.py reset
 
 Credentials: /home/ubuntu/agent/gmail_app_password.json
@@ -163,12 +164,18 @@ def get_gmail_labels(conn: imaplib.IMAP4_SSL, uid: bytes) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# State management (UID-based watermark)
+# State management (dual UID watermarks)
 # ---------------------------------------------------------------------------
 
 def load_state() -> dict:
-    """Load triage state from file, returning defaults if missing."""
-    defaults = {"watermark_uid": None, "last_run": None, "total_processed": 0}
+    """Load triage state from file, returning defaults if missing.
+
+    Two watermarks track a processed range [low_uid, high_uid]:
+    - high_uid: highest UID processed — new arrivals are above this
+    - low_uid: lowest UID processed — backlog is below this
+    Everything between low_uid and high_uid has been evaluated.
+    """
+    defaults = {"high_uid": None, "low_uid": None, "last_run": None, "total_processed": 0}
     try:
         with open(STATE_FILE) as f:
             state = json.load(f)
@@ -424,18 +431,22 @@ def cmd_state(args: argparse.Namespace) -> None:
 
 
 def cmd_watermark(args: argparse.Namespace) -> None:
-    """Set the UID watermark."""
+    """Set high_uid, low_uid, or both."""
     state = load_state()
-    state["watermark_uid"] = args.set
+    if args.high is not None:
+        state["high_uid"] = args.high
+    if args.low is not None:
+        state["low_uid"] = args.low
     state["last_run"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     save_state(state)
     output(state)
 
 
 def cmd_reset(args: argparse.Namespace) -> None:
-    """Reset watermark to None (will be re-initialized on next fetch)."""
+    """Reset both watermarks to None (will be re-initialized on next fetch)."""
     state = load_state()
-    state["watermark_uid"] = None
+    state["high_uid"] = None
+    state["low_uid"] = None
     state["last_run"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     save_state(state)
     output(state)
@@ -502,8 +513,9 @@ def main() -> None:
 
     subparsers.add_parser("state", help="Print current triage state")
 
-    watermark_parser = subparsers.add_parser("watermark", help="Set UID watermark")
-    watermark_parser.add_argument("--set", type=int, required=True, help="UID to set as watermark")
+    watermark_parser = subparsers.add_parser("watermark", help="Set UID watermarks")
+    watermark_parser.add_argument("--high", type=int, default=None, help="Set high_uid (new arrivals boundary)")
+    watermark_parser.add_argument("--low", type=int, default=None, help="Set low_uid (backlog boundary)")
 
     subparsers.add_parser("reset", help="Reset watermark to None")
 
