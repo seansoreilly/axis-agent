@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Gmail email triage via IMAP — fetch, archive, and unsubscribe.
+Gmail email triage via IMAP — fetch, archive, unsubscribe, and track progress.
 
 Usage:
-  python3 email_triage.py fetch --count 5
+  python3 email_triage.py fetch --count 5 --offset 0 --headers-only
   python3 email_triage.py archive --message-id "<id>" --label "Auto-Archive"
   python3 email_triage.py unsubscribe --message-id "<id>" --label "Auto-Unsubscribe"
+  python3 email_triage.py state
+  python3 email_triage.py advance --by 10
+  python3 email_triage.py reset
 
 Credentials: /home/ubuntu/agent/gmail_app_password.json
   {"email": "...", "app_password": "...", "imap_host": "imap.gmail.com", "imap_port": 993,
@@ -15,6 +18,7 @@ Output (stdout): JSON
 """
 
 import argparse
+import datetime
 import email
 import email.header
 import email.utils
@@ -31,6 +35,7 @@ import urllib.request
 from email.mime.text import MIMEText
 
 CREDS_FILE = "/home/ubuntu/agent/gmail_app_password.json"
+STATE_FILE = "/home/ubuntu/.claude-agent/email-triage-state.json"
 
 
 def output(data: object) -> None:
@@ -154,6 +159,30 @@ def get_gmail_labels(conn: imaplib.IMAP4_SSL, uid: bytes) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# State management
+# ---------------------------------------------------------------------------
+
+def load_state() -> dict:
+    """Load triage state from file, returning defaults if missing."""
+    defaults = {"offset": 0, "last_run": None, "total_processed": 0}
+    try:
+        with open(STATE_FILE) as f:
+            state = json.load(f)
+        for key, val in defaults.items():
+            state.setdefault(key, val)
+        return state
+    except (FileNotFoundError, json.JSONDecodeError):
+        return defaults
+
+
+def save_state(state: dict) -> None:
+    """Persist triage state to file."""
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -165,16 +194,30 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         conn.select("INBOX")
         status, data = conn.uid("SEARCH", None, "ALL")
         if status != "OK" or not data[0]:
-            output([])
+            output({"emails": [], "total_inbox": 0})
             return
 
         uids = data[0].split()
-        recent_uids = uids[-(args.count):]
-        recent_uids.reverse()
+        total_inbox = len(uids)
+        offset = getattr(args, "offset", 0)
+        headers_only = getattr(args, "headers_only", False)
+
+        # Slice UIDs: newest first, skip `offset`, take `count`
+        # uids are oldest-first from IMAP, so newest are at the end
+        if offset >= total_inbox:
+            output({"emails": [], "total_inbox": total_inbox, "offset": offset, "backlog_complete": True})
+            return
+
+        end = total_inbox - offset
+        start = max(0, end - args.count)
+        batch_uids = uids[start:end]
+        batch_uids.reverse()  # newest first within batch
+
+        fetch_part = "(RFC822.HEADER)" if headers_only else "(RFC822)"
 
         results = []
-        for uid in recent_uids:
-            status, msg_data = conn.uid("FETCH", uid, "(RFC822)")
+        for uid in batch_uids:
+            status, msg_data = conn.uid("FETCH", uid, fetch_part)
             if status != "OK" or not msg_data[0]:
                 continue
 
@@ -185,23 +228,31 @@ def cmd_fetch(args: argparse.Namespace) -> None:
             subject = decode_header_value(msg.get("Subject", ""))
             from_addr = decode_header_value(msg.get("From", ""))
             date_str = msg.get("Date", "")
-            snippet = extract_snippet(msg)
             labels = get_gmail_labels(conn, uid)
             has_unsub, unsub_link = parse_unsubscribe_header(msg)
 
-            results.append({
+            entry = {
                 "message_id": message_id,
                 "uid": uid.decode("utf-8"),
                 "subject": subject,
                 "from": from_addr,
                 "date": date_str,
-                "snippet": snippet,
                 "labels": labels,
                 "has_unsubscribe": has_unsub,
                 "unsubscribe_link": unsub_link,
-            })
+            }
+            if not headers_only:
+                entry["snippet"] = extract_snippet(msg)
 
-        output(results)
+            results.append(entry)
+
+        output({
+            "emails": results,
+            "total_inbox": total_inbox,
+            "offset": offset,
+            "count": len(results),
+            "backlog_complete": False,
+        })
     finally:
         conn.close()
         conn.logout()
@@ -325,6 +376,30 @@ def follow_unsubscribe(link: str, creds: dict) -> str:
     return "none"
 
 
+def cmd_state(args: argparse.Namespace) -> None:
+    """Print current triage state."""
+    output(load_state())
+
+
+def cmd_advance(args: argparse.Namespace) -> None:
+    """Advance the offset cursor."""
+    state = load_state()
+    state["offset"] += args.by
+    state["total_processed"] += args.by
+    state["last_run"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    save_state(state)
+    output(state)
+
+
+def cmd_reset(args: argparse.Namespace) -> None:
+    """Reset offset to 0 (start over from newest)."""
+    state = load_state()
+    state["offset"] = 0
+    state["last_run"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    save_state(state)
+    output(state)
+
+
 def cmd_unsubscribe(args: argparse.Namespace) -> None:
     creds = load_credentials()
     conn = connect_imap(creds)
@@ -372,6 +447,8 @@ def main() -> None:
 
     fetch_parser = subparsers.add_parser("fetch", help="Fetch recent INBOX emails")
     fetch_parser.add_argument("--count", type=int, default=5, help="Number of emails (default 5)")
+    fetch_parser.add_argument("--offset", type=int, default=0, help="Skip N most recent emails (default 0)")
+    fetch_parser.add_argument("--headers-only", action="store_true", help="Fetch headers only (no body/snippet)")
 
     archive_parser = subparsers.add_parser("archive", help="Label and archive an email")
     archive_parser.add_argument("--message-id", required=True, help="Message-ID header value")
@@ -381,6 +458,13 @@ def main() -> None:
     unsub_parser.add_argument("--message-id", required=True, help="Message-ID header value")
     unsub_parser.add_argument("--label", default="Auto-Unsubscribe", help="Label to apply")
 
+    subparsers.add_parser("state", help="Print current triage state")
+
+    advance_parser = subparsers.add_parser("advance", help="Advance offset cursor")
+    advance_parser.add_argument("--by", type=int, required=True, help="Number to advance offset by")
+
+    subparsers.add_parser("reset", help="Reset offset to 0")
+
     args = parser.parse_args()
 
     if args.command == "fetch":
@@ -389,6 +473,12 @@ def main() -> None:
         cmd_archive(args)
     elif args.command == "unsubscribe":
         cmd_unsubscribe(args)
+    elif args.command == "state":
+        cmd_state(args)
+    elif args.command == "advance":
+        cmd_advance(args)
+    elif args.command == "reset":
+        cmd_reset(args)
 
 
 if __name__ == "__main__":
