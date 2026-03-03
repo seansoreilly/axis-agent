@@ -49,6 +49,7 @@ interface UserState {
   recentPhotos: Array<{ path: string; timestamp: number }>;
   tempFiles: string[];
   currentLocation?: UserLocation;
+  messageQueue: Array<{ chatId: number; text: string }>;
 }
 
 export class TelegramIntegration {
@@ -81,7 +82,7 @@ export class TelegramIntegration {
   private getState(userId: number): UserState {
     let state = this.userState.get(userId);
     if (!state) {
-      state = { totalCostUsd: 0, requestCount: 0, recentPhotos: [], tempFiles: [] };
+      state = { totalCostUsd: 0, requestCount: 0, recentPhotos: [], tempFiles: [], messageQueue: [] };
       this.userState.set(userId, state);
     }
     return state;
@@ -339,11 +340,14 @@ export class TelegramIntegration {
     userId: number,
     text: string
   ): Promise<void> {
-    // Prevent concurrent agent runs for the same user
+    // Queue message if agent is already busy for this user
     if (this.processingUsers.has(userId)) {
+      const state = this.getState(userId);
+      state.messageQueue.push({ chatId, text });
+      const pos = state.messageQueue.length;
       await this.bot.sendMessage(
         chatId,
-        "Still working on your previous message. Please wait."
+        `Queued (${pos} pending). I'll process it when the current request finishes.`
       );
       return;
     }
@@ -426,7 +430,39 @@ export class TelegramIntegration {
         try { unlinkSync(tmpPath); } catch { /* already deleted */ }
       }
       state.tempFiles = [];
+
+      // Drain queued messages — batch into a single prompt
+      this.drainQueue(userId).catch((err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logError("telegram", `Failed to drain queue for user ${userId}: ${errMsg}`);
+      });
     }
+  }
+
+  /**
+   * Drain queued messages for a user by batching them into a single agent run.
+   * Called after the current run finishes (in the finally block).
+   */
+  private async drainQueue(userId: number): Promise<void> {
+    const state = this.getState(userId);
+    if (state.messageQueue.length === 0) return;
+
+    // Take all queued messages and clear the queue
+    const queued = state.messageQueue.splice(0);
+    const chatId = queued[queued.length - 1].chatId;
+
+    // Batch into a single prompt
+    let batchedText: string;
+    if (queued.length === 1) {
+      batchedText = queued[0].text;
+    } else {
+      batchedText = queued
+        .map((m, i) => `[Message ${i + 1}]: ${m.text}`)
+        .join("\n\n");
+    }
+
+    info("telegram", `Draining ${queued.length} queued message(s) for user ${userId}`);
+    await this.runAgent(chatId, userId, batchedText);
   }
 
   private async handleCallbackQuery(
@@ -456,6 +492,8 @@ export class TelegramIntegration {
         await this.bot.sendMessage(chatId, "No previous message to retry.");
       }
     } else if (data === "new_session") {
+      const state = this.getState(userId);
+      state.messageQueue = [];
       this.userSessions.delete(userId);
       await this.bot.sendMessage(chatId, "Session cleared. Starting fresh.");
     } else if (data.startsWith("model:")) {
@@ -538,16 +576,34 @@ export class TelegramIntegration {
         );
         break;
 
-      case "/new":
+      case "/new": {
+        const state = this.getState(userId);
+        const dropped = state.messageQueue.length;
+        state.messageQueue = [];
         this.userSessions.delete(userId);
-        await this.bot.sendMessage(chatId, "Session cleared. Starting fresh.");
+        await this.bot.sendMessage(
+          chatId,
+          dropped > 0
+            ? `Session cleared (${dropped} queued message${dropped > 1 ? "s" : ""} discarded). Starting fresh.`
+            : "Session cleared. Starting fresh."
+        );
         break;
+      }
 
       case "/cancel": {
         const state = this.getState(userId);
+        const dropped = state.messageQueue.length;
+        state.messageQueue = [];
         if (state.abortController && this.processingUsers.has(userId)) {
           state.abortController.abort();
-          await this.bot.sendMessage(chatId, "Cancelling current request...");
+          await this.bot.sendMessage(
+            chatId,
+            dropped > 0
+              ? `Cancelling current request and ${dropped} queued message${dropped > 1 ? "s" : ""}...`
+              : "Cancelling current request..."
+          );
+        } else if (dropped > 0) {
+          await this.bot.sendMessage(chatId, `Cleared ${dropped} queued message${dropped > 1 ? "s" : ""}.`);
         } else {
           await this.bot.sendMessage(chatId, "Nothing to cancel.");
         }
