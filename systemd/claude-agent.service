@@ -14,9 +14,9 @@ RestartSec=30
 StartLimitIntervalSec=300
 StartLimitBurst=5
 OOMPolicy=stop
-MemoryMax=1536M
-MemoryHigh=1280M
-TasksMax=50
+MemoryMax=2048M
+MemoryHigh=1792M
+TasksMax=100
 StandardOutput=journal
 StandardError=journal
 
@@ -25,8 +25,8 @@ PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/agent /home/ubuntu/.claude /home/ubuntu/.config
-PrivateDevices=true
+ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/agent /home/ubuntu/.claude /home/ubuntu/.config /home/ubuntu/.cache
+PrivateDevices=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 

@@ -59,7 +59,8 @@ PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/agent /home/ubuntu/.claude /home/ubuntu/.config
+ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/agent /home/ubuntu/.claude /home/ubuntu/.config /home/ubuntu/.cache
+PrivateDevices=false  # Chromium needs /dev/shm
 ```
 
 **Critical:** `ProtectHome=read-only` blocks all home directory writes. The Claude Code CLI writes to `~/.claude/` — it **must** be in `ReadWritePaths` or the SDK subprocess exits with code 1. All paths in `ReadWritePaths` must exist before service start (exit code 226/NAMESPACE otherwise).
@@ -71,6 +72,7 @@ ReadWritePaths=/home/ubuntu/workspace /home/ubuntu/.claude-agent /home/ubuntu/ag
 - **Telegram redelivers on restart** — polling mode picks up unacked messages. Benign; may hit stale session errors.
 - **Stale dist/ test files** — vitest may pick up `dist/telegram.test.js`. Delete it or rebuild.
 - **`cron-parser` v5 API** — uses `CronExpressionParser.parse()` (not the old `parseExpression()`).
+- **Chromium `/dev/shm`** — `PrivateDevices=false` is required in the systemd unit. Without it, Chromium crashes because it can't access shared memory.
 
 ## Capability Routing
 
