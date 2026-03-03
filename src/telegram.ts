@@ -10,6 +10,15 @@ const ACK_DELAY_MS = 3000; // Send initial ack after 3s if still processing
 const STATUS_UPDATE_INTERVAL_MS = 60_000; // Update status every 60s
 const RESPONSE_TIME_HISTORY = 20; // Track last N response times for ETA
 
+// Telegram Bot API Location fields missing from @types/node-telegram-bot-api
+interface TelegramLocation {
+  latitude: number;
+  longitude: number;
+  horizontal_accuracy?: number;
+  heading?: number;
+  live_period?: number;
+}
+
 const VALID_MODELS: Record<string, string> = {
   opus: "claude-opus-4-6",
   sonnet: "claude-sonnet-4-6",
@@ -18,6 +27,16 @@ const VALID_MODELS: Record<string, string> = {
 
 function sanitizeKey(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_-]/g, "");
+}
+
+interface UserLocation {
+  latitude: number;
+  longitude: number;
+  horizontalAccuracy?: number;
+  heading?: number;
+  timestamp: number;
+  isLive: boolean;
+  liveMessageId?: number; // Track which message carries the live session
 }
 
 interface UserState {
@@ -29,6 +48,7 @@ interface UserState {
   abortController?: AbortController;
   recentPhotos: Array<{ path: string; timestamp: number }>;
   tempFiles: string[];
+  currentLocation?: UserLocation;
 }
 
 export class TelegramIntegration {
@@ -72,6 +92,14 @@ export class TelegramIntegration {
       this.handleMessage(msg).catch((err) => {
         const errMsg = err instanceof Error ? err.message : String(err);
         logError("telegram", `Failed to handle message: ${errMsg}`);
+      });
+    });
+
+    // Live location updates arrive as edited messages
+    this.bot.on("edited_message", (msg) => {
+      this.handleLocationUpdate(msg).catch((err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logError("telegram", `Failed to handle edited message: ${errMsg}`);
       });
     });
 
@@ -255,6 +283,34 @@ export class TelegramIntegration {
       if (!text) text = "Please process this voice message.";
     }
 
+    // Handle location sharing (one-off or live location start)
+    if (msg.location) {
+      const rawLoc = msg.location as TelegramLocation;
+      const loc: UserLocation = {
+        latitude: rawLoc.latitude,
+        longitude: rawLoc.longitude,
+        horizontalAccuracy: rawLoc.horizontal_accuracy,
+        heading: rawLoc.heading,
+        timestamp: Date.now(),
+        isLive: !!rawLoc.live_period,
+        liveMessageId: rawLoc.live_period ? msg.message_id : undefined,
+      };
+      if (userId) {
+        const state = this.getState(userId);
+        state.currentLocation = loc;
+        this.persistLocation(loc);
+        const liveLabel = loc.isLive ? " (live)" : "";
+        info("telegram", `Location${liveLabel} from user ${userId}: ${loc.latitude}, ${loc.longitude}`);
+      }
+      if (!text) {
+        // Pure location share with no caption — acknowledge silently, don't run agent
+        await this.bot.sendMessage(chatId, loc.isLive
+          ? `Live location tracking started. I'll keep your position updated.`
+          : `Location received: ${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`);
+        return;
+      }
+    }
+
     // Handle inline reply context — prepend the replied-to message
     if (msg.reply_to_message && msg.reply_to_message.from?.id !== msg.from?.id) {
       const repliedText = msg.reply_to_message.text ?? "";
@@ -413,6 +469,41 @@ export class TelegramIntegration {
         await this.bot.sendMessage(chatId, `Switched to ${modelKey}.`);
       }
     }
+  }
+
+  /** Handle live location updates (arrive as edited_message events). */
+  private async handleLocationUpdate(msg: TelegramBot.Message): Promise<void> {
+    if (!msg.location || !msg.from?.id) return;
+    const userId = msg.from.id;
+
+    if (!this.isAuthorized(userId)) return;
+
+    const state = this.getState(userId);
+    const rawLoc = msg.location as TelegramLocation;
+    const loc: UserLocation = {
+      latitude: rawLoc.latitude,
+      longitude: rawLoc.longitude,
+      horizontalAccuracy: rawLoc.horizontal_accuracy,
+      heading: rawLoc.heading,
+      timestamp: Date.now(),
+      isLive: true,
+      liveMessageId: msg.message_id,
+    };
+    state.currentLocation = loc;
+    this.persistLocation(loc);
+  }
+
+  /** Persist location to memory store so the agent can reference it. */
+  private persistLocation(loc: UserLocation): void {
+    const value = JSON.stringify({
+      lat: loc.latitude,
+      lon: loc.longitude,
+      accuracy: loc.horizontalAccuracy,
+      heading: loc.heading,
+      live: loc.isLive,
+      at: new Date(loc.timestamp).toISOString(),
+    });
+    this.memory.setFact("current-location", value, "personal");
   }
 
   private async handleCommand(
