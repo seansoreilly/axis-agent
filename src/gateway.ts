@@ -104,8 +104,17 @@ export async function createGateway(
   // OwnTracks location ingestion (only if token is configured)
   if (owntracksToken && memory) {
     app.post<{ Body: OwnTracksLocation }>("/owntracks", async (request, reply) => {
-      const auth = request.headers.authorization;
-      if (!auth || auth !== `Bearer ${owntracksToken}`) {
+      // Accept Bearer token OR HTTP Basic auth (OwnTracks iOS uses Basic)
+      const auth = request.headers.authorization ?? "";
+      let authenticated = false;
+      if (auth.startsWith("Bearer ")) {
+        authenticated = auth.slice(7) === owntracksToken;
+      } else if (auth.startsWith("Basic ")) {
+        const decoded = Buffer.from(auth.slice(6), "base64").toString();
+        const password = decoded.split(":").slice(1).join(":");
+        authenticated = password === owntracksToken;
+      }
+      if (!authenticated) {
         return reply.status(401).send({ error: "unauthorized" });
       }
 
