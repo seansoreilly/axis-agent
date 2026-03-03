@@ -29,9 +29,10 @@ Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-a
 - `Agent` (`src/agent.ts`) — wraps SDK `query()` as an async generator. Builds a system prompt with memory context, orchestration instructions, and calendar tools. Supports session resumption (`options.resume`), per-call model override, and `AbortSignal` for cancellation.
 - `TelegramIntegration` (`src/telegram.ts`) — polling-mode bot. Handles commands (`/new`, `/cancel`, `/retry`, `/model`, `/cost`, `/schedule`, `/tasks`, `/remember`, `/forget`, `/memories`, `/status`, `/post`), inline keyboard callbacks, photo/voice/document uploads, reply context, and per-user state (model override, cost tracking, abort controller, recent photos). Constructor takes optional `Scheduler` as 5th param.
 - `Scheduler` (`src/scheduler.ts`) — cron-based task runner via `node-cron` with Australia/Melbourne timezone. Max 20 tasks, minimum 5-minute interval. Results delivered via callback (wired to Telegram notifications in index.ts).
-- `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Routes: `GET /health`, `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`.
+- `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Routes: `GET /health`, `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `POST /owntracks` (location ingestion, enabled when `OWNTRACKS_TOKEN` is set).
+- `TrelloMcpServer` (`src/trello-mcp-server.ts`) — custom MCP server exposing Trello REST API as tools (list boards, create/update/archive cards, manage checklists, comments). Runs as stdio MCP server configured in `.mcp.json`. Requires `TRELLO_API_KEY` and `TRELLO_API_TOKEN` env vars.
 - `Memory` (`src/memory.ts`) — JSON file store at `~/.claude-agent/memory/store.json`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
-- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`.
+- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`.
 
 ## ESM Module System
 
@@ -42,6 +43,7 @@ This project uses `"type": "module"` — all imports must use `.js` extensions (
 - `bypassPermissions` + `allowDangerouslySkipPermissions: true` is required for headless/systemd environments. Other permission modes prompt for TTY input and fail.
 - `query()` returns an async generator. Stream messages looking for `type === "result"` for the final output and `type === "system"` with `subtype === "init"` for session ID.
 - Session resumption: pass `options.resume = sessionId` to continue a previous conversation.
+- Sessions costing >= $0.05 get an auto-generated summary (via Haiku) that's injected when resuming, providing context continuity.
 - `allowedTools` controls which tools are available but does NOT replace permission prompts in non-bypass modes.
 
 ## Testing
@@ -85,6 +87,18 @@ The agent's system prompt includes a decision framework for adding new integrati
 5. **One-off Bash** — For simple, non-recurring tasks.
 
 Key constraint: the agent runs headless under systemd, so only API keys / app passwords / service accounts work for auth. `allowedTools` includes `mcp__*` to permit any configured MCP server tools.
+
+## MCP Servers
+
+Configured in `.mcp.json` (auto-loaded by the SDK from cwd):
+
+- **Zapier** (`@anthropic-ai/mcp-server-zapier`) — Google Calendar, Gmail, Google Contacts via Zapier actions. Requires `ZAPIER_API_KEY`.
+- **Trello** (`src/trello-mcp-server.ts`) — custom native MCP server for Trello board/card/checklist management. Runs from `dist/trello-mcp-server.js` (must `npm run build` first). Requires `TRELLO_API_KEY`, `TRELLO_API_TOKEN`.
+- **Playwright** (`@playwright/mcp`) — headless Chromium browser automation (screenshots, form filling, navigation). Viewport: 1280x720. `PrivateDevices=false` required in systemd unit for `/dev/shm` access.
+
+## OwnTracks Location Tracking
+
+Real-time GPS location from the user's phone via OwnTracks app. The `POST /owntracks` endpoint accepts location updates and stores them as a `current-location` memory fact. Auth supports both Bearer token and HTTP Basic auth (iOS OwnTracks uses Basic by default — password field = token). Set `OWNTRACKS_TOKEN` env var to enable. Telegram live location sharing also updates the same memory fact.
 
 ## Adding Telegram Slash Commands
 
