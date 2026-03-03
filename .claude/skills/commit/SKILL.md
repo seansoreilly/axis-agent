@@ -80,6 +80,10 @@ After the local repo is committed and pushed, check the agent repo on the deploy
 ssh -i ~/.ssh/claude-code-agent-key.pem ubuntu@54.66.167.208 'cd /home/ubuntu/agent && git status && git log --oneline -1'
 ```
 
-- If the instance repo has uncommitted changes, run steps 1-6 on the instance repo via SSH (stage, check for secrets/PII, commit, push)
+- If the instance repo has uncommitted changes, run the full commit process on the instance repo via SSH:
+  1. Check `.gitignore` covers secrets/credentials
+  2. Scan staged diff for secret values and PII
+  3. Check if `README.md` needs updating to reflect source changes (same criteria as Step 4)
+  4. Stage, commit, and push
 - If the instance repo is clean and pushed, report that both repos are in sync
 - The instance repo remote is `claude-agent-internal` on GitHub — it should always reflect what's deployed
