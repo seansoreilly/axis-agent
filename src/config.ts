@@ -15,6 +15,7 @@ export interface Config {
     workDir: string;
   };
   memoryDir: string;
+  owntracksToken?: string;
 }
 
 function requireEnv(key: string): string {
@@ -64,5 +65,6 @@ export function loadConfig(): Config {
       workDir,
     },
     memoryDir,
+    owntracksToken: process.env["OWNTRACKS_TOKEN"],
   };
 }

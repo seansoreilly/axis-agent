@@ -47,7 +47,13 @@ async function main(): Promise<void> {
   telegram.start();
 
   // Start HTTP gateway
-  await createGateway(config.server.port, agent, scheduler);
+  await createGateway({
+    port: config.server.port,
+    agent,
+    scheduler,
+    memory,
+    owntracksToken: config.owntracksToken,
+  });
 
   info("main", "All systems running.");
 
