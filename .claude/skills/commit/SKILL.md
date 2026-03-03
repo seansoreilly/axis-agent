@@ -71,3 +71,15 @@ If no README updates are needed, skip this step.
 - Push to the current branch's remote tracking branch
 - If no upstream is set, push with `-u origin <branch>`
 - Report the result (success or failure) to the user
+
+## Step 7: Verify agent instance repo
+
+After the local repo is committed and pushed, check the agent repo on the deployed instance:
+
+```bash
+ssh -i ~/.ssh/claude-code-agent-key.pem ubuntu@REDACTED_SERVER_IP 'cd /home/ubuntu/agent && git status && git log --oneline -1'
+```
+
+- If the instance repo has uncommitted changes, run steps 1-6 on the instance repo via SSH (stage, check for secrets/PII, commit, push)
+- If the instance repo is clean and pushed, report that both repos are in sync
+- The instance repo remote is `claude-agent-internal` on GitHub — it should always reflect what's deployed
