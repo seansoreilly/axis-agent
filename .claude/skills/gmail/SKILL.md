@@ -85,5 +85,5 @@ python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py reset
 4. Evaluate each email's importance based on subject, sender (and snippet if available)
 5. For unimportant emails with unsubscribe links → run `unsubscribe`
 6. For unimportant emails without unsubscribe → run `archive`
-7. Run `advance --by <count>` to move the cursor forward
-8. Report progress: "Processed emails <offset>-<offset+count> of ~<total_inbox>"
+7. Run `advance --by <number_kept>` — advance by the number of emails you **kept** (not the batch size), because archived/unsubscribed emails leave the INBOX and shift positions down
+8. Report progress: "Processed <count> emails at offset <offset> of ~<total_inbox> (kept <n>, archived <n>, unsubscribed <n>)"
