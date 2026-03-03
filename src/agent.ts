@@ -43,6 +43,7 @@ export class Agent {
       `- Interface: Telegram bot — users interact with you via chat messages`,
       `- Tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task, Zapier MCP (mcp__zapier__*), Playwright MCP (mcp__playwright__*)`,
       `- Sessions: each user has a persistent conversation session (cleared with /new)`,
+      `- Location: the user can share their location via Telegram (one-off or live). When shared, it is stored as the "current-location" fact. Check this fact for location-aware responses. Live locations update automatically every few seconds.`,
       `- Source code: /home/ubuntu/agent (git repo)`,
       "",
       "## Persistent Memory",
