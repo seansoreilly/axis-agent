@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Fetch and parse iCal feed, returning today's events in Melbourne timezone."""
 
+import os
 import sys
 import re
 import urllib.request
 from datetime import datetime, date, timezone, timedelta
 
-ICAL_URL = "https://REDACTED_ICAL_URL"
+ICAL_URL = os.environ.get("ICAL_URL", "")
 MELBOURNE_OFFSET = timedelta(hours=11)  # AEDT (UTC+11); adjust to +10 for AEST if needed
 MELBOURNE_TZ = timezone(MELBOURNE_OFFSET)
 
@@ -86,6 +87,9 @@ if __name__ == "__main__":
     else:
         target = None
 
+    if not ICAL_URL:
+        print("Error: ICAL_URL environment variable is not set.", file=sys.stderr)
+        sys.exit(1)
     ical = fetch_ical(ICAL_URL)
     events = events_today(ical, target)
 

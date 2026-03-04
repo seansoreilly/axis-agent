@@ -7,17 +7,18 @@
 set -euo pipefail
 
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/claude-code-agent-key.pem}"
-REMOTE_HOST="${DEPLOY_HOST:-ubuntu@REDACTED_SERVER_IP}"
+REMOTE_HOST="${DEPLOY_HOST:?Set DEPLOY_HOST env var (e.g. ubuntu@<server-ip>)}"
 REMOTE_AGENT_DIR="/home/ubuntu/agent"
 REMOTE_CLAUDE_DIR="/home/ubuntu/.claude-agent"
 
 # Bitwarden item IDs (from claude-agent-lightsail folder)
-BW_ENV_SECRETS_ID="REDACTED_BW_ID"
-BW_GMAIL_ID="REDACTED_BW_ID"
-BW_FACEBOOK_ID="REDACTED_BW_ID"
-BW_GOOGLE_SA_ID="REDACTED_BW_ID"
-BW_GOOGLE_CREDS_ID="REDACTED_BW_ID"
-BW_GOOGLE_CONTACTS_TOKEN_ID=""  # TODO: Add Bitwarden item ID after storing token in vault
+# Set these env vars or replace with your own vault item IDs
+BW_ENV_SECRETS_ID="${BW_ENV_SECRETS_ID:?Set BW_ENV_SECRETS_ID env var}"
+BW_GMAIL_ID="${BW_GMAIL_ID:?Set BW_GMAIL_ID env var}"
+BW_FACEBOOK_ID="${BW_FACEBOOK_ID:?Set BW_FACEBOOK_ID env var}"
+BW_GOOGLE_SA_ID="${BW_GOOGLE_SA_ID:?Set BW_GOOGLE_SA_ID env var}"
+BW_GOOGLE_CREDS_ID="${BW_GOOGLE_CREDS_ID:?Set BW_GOOGLE_CREDS_ID env var}"
+BW_GOOGLE_CONTACTS_TOKEN_ID="${BW_GOOGLE_CONTACTS_TOKEN_ID:-}"
 
 # Authenticate / unlock Bitwarden (skip if BW_SESSION already set)
 if [ -z "${BW_SESSION:-}" ]; then

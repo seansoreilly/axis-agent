@@ -7,6 +7,7 @@ Usage:
   python3 ical_fetch.py [--days N] [--date YYYY-MM-DD]
 """
 
+import os
 import sys
 import re
 import json
@@ -16,7 +17,7 @@ from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 
 # --- Config ---
-CALENDAR_URL = "https://REDACTED_ICAL_URL"
+CALENDAR_URL = os.environ.get("ICAL_URL", "")
 LOCAL_TZ = ZoneInfo("Australia/Melbourne")
 
 # Windows timezone ID → IANA mapping (add more as needed)
@@ -171,6 +172,10 @@ def main():
     else:
         today = datetime.now(tz=LOCAL_TZ).date()
         target = today
+
+    if not CALENDAR_URL:
+        print(json.dumps({"error": "ICAL_URL environment variable is not set", "events": []}))
+        sys.exit(1)
 
     try:
         ics_text = fetch_ics(CALENDAR_URL)

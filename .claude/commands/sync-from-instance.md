@@ -7,7 +7,7 @@ Pull all changes the agent has made to itself on the Lightsail instance back to 
 The agent on Lightsail can modify its own source code via `scripts/deploy-self.sh`. This means the instance may have changes not reflected in this repo. This skill syncs the local repo to match.
 
 - **SSH key:** `~/.ssh/claude-code-agent-key.pem`
-- **Instance:** `ubuntu@REDACTED_SERVER_IP` (use `DEPLOY_HOST` env var if set)
+- **Instance:** Use `DEPLOY_HOST` env var (e.g. `ubuntu@<server-ip>`)
 - **Remote dir:** `/home/ubuntu/agent`
 
 ## Steps
@@ -17,7 +17,7 @@ The agent on Lightsail can modify its own source code via `scripts/deploy-self.s
 Pull all files from the instance, excluding generated/sensitive files:
 
 ```bash
-REMOTE="${DEPLOY_HOST:-ubuntu@REDACTED_SERVER_IP}"
+REMOTE="${DEPLOY_HOST:?Set DEPLOY_HOST env var}"
 rsync -avz --delete \
   --exclude node_modules \
   --exclude dist \

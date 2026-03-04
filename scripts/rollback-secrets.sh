@@ -5,7 +5,7 @@ set -euo pipefail
 
 BACKUP_DIR="${1:?Usage: bash scripts/rollback-secrets.sh <backup-dir>}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/claude-code-agent-key.pem}"
-REMOTE_HOST="${DEPLOY_HOST:-ubuntu@REDACTED_SERVER_IP}"
+REMOTE_HOST="${DEPLOY_HOST:?Set DEPLOY_HOST env var (e.g. ubuntu@<server-ip>)}"
 REMOTE_AGENT_DIR="/home/ubuntu/agent"
 REMOTE_CLAUDE_DIR="/home/ubuntu/.claude-agent"
 

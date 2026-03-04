@@ -12,12 +12,7 @@ Credentials are stored in `/home/ubuntu/.claude-agent/twilio-credentials.json` (
 
 ## Available Numbers
 
-| Number | SMS | Voice | MMS |
-|---|---|---|---|
-| +1XXXXXXXXXX (US) | Yes | Yes | Yes |
-| +61XXXXXXXXX (AU) | No | Yes | No |
-
-**Default from number:** +1XXXXXXXXXX (SMS+Voice). Use +61XXXXXXXXX for AU voice calls with local caller ID.
+Run `list_numbers.py` to see current numbers and their capabilities. The credentials file stores the default "from" number.
 
 ## Send SMS
 
@@ -29,7 +24,7 @@ python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to '+6140
 **Arguments:**
 - `--to` (required): Recipient phone number in E.164 format (e.g. +61400000000)
 - `--body` (required): SMS message body (max 1600 chars, auto-segmented)
-- `--from`: Sender number (default: from credentials file, +1XXXXXXXXXX)
+- `--from`: Sender number (default: from credentials file)
 
 **Output:** JSON with `success`, `sid`, `to`, `from`, `status`
 
@@ -61,6 +56,6 @@ python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/list_numbers.py
 ## Notes
 
 - **Region:** This account uses Twilio's AU1 region (api.au1.twilio.com)
-- **SMS from AU number:** The +61 number does NOT support SMS — use the US number (+1XXXXXXXXXX) for all SMS
-- **Voice from AU number:** Use +61XXXXXXXXX for calls to Australian numbers (local caller ID)
+- **SMS:** The AU number does NOT support SMS — use the US number for all SMS
+- **Voice:** Use the AU number for calls to Australian numbers (local caller ID)
 - **E.164 format:** Always include country code with + prefix (e.g. +61412345678, not 0412345678)

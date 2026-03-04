@@ -19,13 +19,15 @@ When the user invokes `/bitwarden`, help them add, update, or rotate secrets sto
 
 All secrets are in the `claude-agent-lightsail` Bitwarden folder. Each item is a Secure Note with content in the Notes field.
 
-| Item ID | Item Name | Format | Server Destination |
-|---|---|---|---|
-| `REDACTED_BW_ID` | `env-secrets` | `KEY=value` pairs (one per line) | `/home/ubuntu/agent/.env` (merged) |
-| `REDACTED_BW_ID` | `gmail` | JSON | `/home/ubuntu/agent/gmail_app_password.json` |
-| `REDACTED_BW_ID` | `facebook` | JSON | `/home/ubuntu/.claude-agent/facebook-page-token.json` |
-| `REDACTED_BW_ID` | `google-service-account` | JSON | `/home/ubuntu/.claude-agent/google-service-account.json` |
-| `REDACTED_BW_ID` | `google-credentials` | JSON | `/home/ubuntu/.claude-agent/google-credentials.json` |
+| Item Name | Format | Server Destination |
+|---|---|---|
+| `env-secrets` | `KEY=value` pairs (one per line) | `/home/ubuntu/agent/.env` (merged) |
+| `gmail` | JSON | `/home/ubuntu/agent/gmail_app_password.json` |
+| `facebook` | JSON | `/home/ubuntu/.claude-agent/facebook-page-token.json` |
+| `google-service-account` | JSON | `/home/ubuntu/.claude-agent/google-service-account.json` |
+| `google-credentials` | JSON | `/home/ubuntu/.claude-agent/google-credentials.json` |
+
+Item IDs are stored as env vars (`BW_ENV_SECRETS_ID`, `BW_GMAIL_ID`, etc.) — see `scripts/sync-secrets.sh`.
 
 ## Adding/Updating an env-secrets Key
 
@@ -36,7 +38,7 @@ To add or update a key in the `env-secrets` item (e.g. `ZAPIER_API_KEY`):
 export BW_SESSION=$(bw unlock --raw)
 
 # 2. Get current content
-CURRENT=$(bw get notes "REDACTED_BW_ID")
+CURRENT=$(bw get notes "$BW_ENV_SECRETS_ID")
 
 # 3. Check if key already exists
 echo "$CURRENT" | grep "^KEY_NAME="
@@ -48,10 +50,10 @@ UPDATED=$(echo "$CURRENT" | sed "s|^KEY_NAME=.*|KEY_NAME=new_value|")
 UPDATED=$(printf '%s\nKEY_NAME=new_value' "$CURRENT")
 
 # 5. Update the vault item
-bw get item "REDACTED_BW_ID" \
+bw get item "$BW_ENV_SECRETS_ID" \
   | jq --arg notes "$UPDATED" '.notes = $notes' \
   | bw encode \
-  | bw edit item "REDACTED_BW_ID"
+  | bw edit item "$BW_ENV_SECRETS_ID"
 
 # 6. Lock vault
 bw lock

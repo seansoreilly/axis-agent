@@ -17,7 +17,7 @@ A **personal AI assistant that runs on your own hardware** (local machine or VPS
 
 ### Capabilities
 - Browse the web, fill forms, extract data from sites
-- Read/write files, run shell commands, execute scripts
+- Read/write files, run shell commands, e22xecute scripts
 - Control smart home devices, manage Spotify playback
 - Send emails, manage calendars, set reminders
 - Scheduled cron jobs and webhook triggers

@@ -794,7 +794,7 @@ export class TelegramIntegration {
           "Check the JSON output — each result shows adjustments made (brightness, saturation, contrast, crop). Report these to the user in Step 5.",
           "",
           "### Step 4: Generate post text",
-          "Write engaging Facebook post text suitable for a local councillor's page.",
+          "Write engaging Facebook post text suitable for the page owner.",
           "Tone: warm, community-focused, professional but approachable.",
           "Only reference event/location details if confirmed from a current calendar event in Step 2.",
           "Do NOT use hashtags excessively (1-2 max if appropriate).",

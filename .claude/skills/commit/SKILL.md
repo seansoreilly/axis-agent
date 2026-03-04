@@ -77,7 +77,7 @@ If no README updates are needed, skip this step.
 After the local repo is committed and pushed, check the agent repo on the deployed instance:
 
 ```bash
-ssh -i ~/.ssh/claude-code-agent-key.pem ubuntu@REDACTED_SERVER_IP 'cd /home/ubuntu/agent && git status && git log --oneline -1'
+ssh -i ~/.ssh/claude-code-agent-key.pem "$DEPLOY_HOST" 'cd /home/ubuntu/agent && git status && git log --oneline -1'
 ```
 
 - If the instance repo has uncommitted changes, run the full commit process on the instance repo via SSH:
