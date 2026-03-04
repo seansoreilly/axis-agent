@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Config } from "./config.js";
 import type { Memory } from "./memory.js";
@@ -14,18 +16,73 @@ export interface AgentResult {
 /** Cost threshold (USD) above which we generate a conversation summary. */
 const SUMMARY_COST_THRESHOLD = 0.05;
 
+/** Default search paths for SOUL.md, checked in order. */
+const SOUL_MD_SEARCH_PATHS = [
+  "SOUL.md",              // relative to cwd (project root)
+  "../SOUL.md",           // parent dir (when running from dist/)
+];
+
+/**
+ * Load SOUL.md from disk. Searches default paths, then falls back to
+ * an explicit absolute path if provided. Returns null if not found.
+ */
+export function loadSoulMd(basePath?: string): string | null {
+  // Check explicit path first
+  if (basePath) {
+    if (existsSync(basePath)) {
+      return readFileSync(basePath, "utf-8");
+    }
+    return null;
+  }
+
+  // Search default paths relative to cwd
+  const cwd = process.cwd();
+  for (const relPath of SOUL_MD_SEARCH_PATHS) {
+    const fullPath = join(cwd, relPath);
+    if (existsSync(fullPath)) {
+      info("agent", `Loaded personality from ${fullPath}`);
+      return readFileSync(fullPath, "utf-8");
+    }
+  }
+
+  return null;
+}
+
 export class Agent {
   private config: Config;
   private memory: Memory;
+  private soulMd: string | null;
 
-  constructor(config: Config, memory: Memory) {
+  constructor(config: Config, memory: Memory, soulMdPath?: string) {
     this.config = config;
     this.memory = memory;
+    this.soulMd = loadSoulMd(soulMdPath);
+    if (this.soulMd) {
+      info("agent", "Using SOUL.md for core personality");
+    } else {
+      info("agent", "No SOUL.md found, using built-in default prompt");
+    }
   }
 
   /** Build the core system prompt (always included). */
   private buildCorePrompt(): string {
     const { claude } = this.config;
+
+    // Dynamic runtime values always injected
+    const runtimeContext = [
+      "## Runtime",
+      `- Model: ${claude.model}`,
+      `- Max turns per request: ${claude.maxTurns}`,
+      `- Budget limit: $${claude.maxBudgetUsd} per request`,
+      `- Working directory: ${claude.workDir}`,
+    ].join("\n");
+
+    // If SOUL.md is loaded, use it + runtime context
+    if (this.soulMd) {
+      return `${this.soulMd}\n\n${runtimeContext}`;
+    }
+
+    // Fallback: built-in default (kept for backwards compatibility)
     return [
       "You are a helpful AI assistant running as an always-on agent on a cloud server.",
       "You can browse the web, manage files, run commands, and help with research and tasks.",
