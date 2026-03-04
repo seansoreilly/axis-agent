@@ -31,3 +31,7 @@ Append entries below when a skill creation succeeds, fails, or requires correcti
 - **Root cause**: SOUL.md was loaded as the core prompt, completely bypassing the built-in fallback prompt in `agent.ts` which contained the contact lookup instructions. SOUL.md had no contact lookup section.
 - **Fix applied**: Added the "Contact Lookup (MANDATORY)" section to SOUL.md with explicit steps for lookup → extract → send.
 - **Lesson**: When the agent uses SOUL.md for personality, ALL critical instructions must be in SOUL.md — the built-in fallback prompt in agent.ts is never used. Any new workflow instructions must be added to SOUL.md, not just agent.ts.
+
+### 2026-03-05 - general - lesson
+- **What happened**: Skill scripts handle credentials (API keys, tokens, auth secrets) that get loaded from JSON files or env vars.
+- **Lesson**: Before deploying any skill script, always audit for hardcoded secrets, debug logging that could leak credentials, or credential values that could end up in git. Check that credentials are loaded from external files/env vars only, never embedded in code.

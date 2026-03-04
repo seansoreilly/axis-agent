@@ -17,6 +17,8 @@ npx vitest run src/telegram.test.ts  # Run a single test file
 **Deploy (on the server itself):** `bash scripts/deploy-self.sh` — builds, prunes devDeps, installs systemd service, restarts.
 **Deploy (remote):** `./deploy.sh` — SSH-based deploy using `DEPLOY_HOST` env var. Automatically pulls agent-created files from the instance before pushing (additive only, won't overwrite local edits). Use `./deploy.sh --dry-run` to preview what rsync would sync/delete without making changes.
 
+**Before deploying:** Always check for hardcoded secrets, credentials, API keys, tokens, or PII in the diff. Never deploy code that contains embedded secrets — credentials must come from env vars or external files only.
+
 ## Project Overview
 
 Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-agent-sdk`) with Telegram as the primary interface. Deployed on AWS Lightsail behind Tailscale VPN, running as a systemd service.
