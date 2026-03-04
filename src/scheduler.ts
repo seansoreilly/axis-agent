@@ -1,9 +1,13 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { exec } from "node:child_process";
 import { dirname, join } from "node:path";
 import cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import type { Agent } from "./agent.js";
 import { info, error as logError } from "./logger.js";
+
+/** Max time for a monitor check command to run (10 seconds). */
+const CHECK_COMMAND_TIMEOUT_MS = 10_000;
 
 const MAX_TASKS = 20;
 const MIN_INTERVAL_SECONDS = 300; // 5 minutes
@@ -14,9 +18,34 @@ export interface ScheduledTask {
   schedule: string; // cron expression
   prompt: string;
   enabled: boolean;
+  /**
+   * Optional check command for monitor-style tasks.
+   * When set, this shell command runs first. If it produces non-empty stdout,
+   * that output is prepended to the prompt and the full agent runs.
+   * If stdout is empty or the command fails, the task is skipped silently.
+   * This enables "check and only act if needed" patterns (e.g., new emails, RSS updates).
+   */
+  checkCommand?: string;
 }
 
 type TaskCallback = (taskId: string, result: string) => void;
+
+/**
+ * Run a check command and return its stdout (trimmed).
+ * Returns empty string if the command fails or times out.
+ */
+export function runCheckCommand(command: string): Promise<string> {
+  return new Promise((resolve) => {
+    exec(command, { timeout: CHECK_COMMAND_TIMEOUT_MS }, (error, stdout) => {
+      if (error) {
+        // Command failed or timed out — treat as "nothing to report"
+        resolve("");
+        return;
+      }
+      resolve((stdout ?? "").trim());
+    });
+  });
+}
 
 export class Scheduler {
   private agent: Agent;
@@ -106,9 +135,23 @@ export class Scheduler {
             return;
           }
           this.running = true;
-          info("scheduler", `Running task: ${task.name} (${task.id})`);
           try {
-            const result = await this.agent.run(task.prompt);
+            // Monitor mode: run check command first, skip if no output
+            let prompt = task.prompt;
+            if (task.checkCommand) {
+              info("scheduler", `Running check for monitor task: ${task.name} (${task.id})`);
+              const checkOutput = await runCheckCommand(task.checkCommand);
+              if (!checkOutput) {
+                info("scheduler", `Monitor task ${task.id} — check returned nothing, skipping`);
+                return;
+              }
+              info("scheduler", `Monitor task ${task.id} — check found data, running agent`);
+              prompt = `## Monitor Check Output\nThe following was returned by the check command (\`${task.checkCommand}\`):\n\n${checkOutput}\n\n## Task Instructions\n${task.prompt}`;
+            } else {
+              info("scheduler", `Running task: ${task.name} (${task.id})`);
+            }
+
+            const result = await this.agent.run(prompt);
             info(
               "scheduler",
               `Task ${task.id} completed in ${result.durationMs}ms`
