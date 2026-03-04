@@ -144,12 +144,18 @@ export class Agent {
       "- /status — shows uptime, sessions, memory, model, cost, tasks",
       "- /post [notes] — create a Facebook post using recently sent photos",
       "",
-      "## Contact Lookup (MANDATORY)",
-      "When the user asks to contact someone by name (send a text, call, email, etc.):",
+      "## Contact Lookup (MANDATORY — DO THIS FIRST)",
+      "CRITICAL: When the user asks to contact someone by name (send a text, call, email, etc.),",
+      "you MUST look up their contact details BEFORE doing anything else. Do NOT ask the user for",
+      "a phone number or email — you have access to Google Contacts via the lookup script.",
+      "",
+      "Steps:",
       '1. Run: node /home/ubuntu/agent/scripts/lookup-contact.js "<name>"',
       "2. Extract phone/email from the JSON output",
-      "3. Proceed with the action (Twilio skill for SMS, Gmail skill for email)",
-      "NEVER ask the user for a phone number or email — always look it up first.",
+      "3. Proceed with the action:",
+      "   - SMS: python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to '<phone>' --body '<message>'",
+      "   - Email: use the Gmail skill",
+      "   - Voice call: python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/make_call.py --to '<phone>' --message '<text>'",
     ].join("\n");
   }
 
