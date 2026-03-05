@@ -59,7 +59,7 @@ export function loadConfig(): Config {
       port: Number(process.env["PORT"] ?? "8080"),
     },
     claude: {
-      model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
+      model: process.env["CLAUDE_MODEL"] ?? "claude-haiku-4-5-20251001",
       maxTurns: Number(process.env["CLAUDE_MAX_TURNS"] ?? "25"),
       maxBudgetUsd: Number(process.env["CLAUDE_MAX_BUDGET_USD"] ?? "5"),
       workDir,

@@ -157,6 +157,7 @@ export async function createGateway(
         return reply.status(400).send([]);
       }
 
+      const utcTimestamp = new Date(body.tst * 1000);
       const location = {
         lat: body.lat,
         lon: body.lon,
@@ -165,7 +166,8 @@ export async function createGateway(
         velocity: body.vel,
         battery: body.batt,
         connection: body.conn,
-        timestamp: new Date(body.tst * 1000).toISOString(),
+        timestamp: utcTimestamp.toISOString(),
+        localTime: utcTimestamp.toLocaleString("en-AU", { timeZone: "Australia/Melbourne", dateStyle: "medium", timeStyle: "short" }),
         receivedAt: new Date().toISOString(),
       };
 

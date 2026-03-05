@@ -495,13 +495,15 @@ export class TelegramIntegration {
 
   /** Persist location to memory store so the agent can reference it. */
   private persistLocation(loc: UserLocation): void {
+    const utcDate = new Date(loc.timestamp);
     const value = JSON.stringify({
       lat: loc.latitude,
       lon: loc.longitude,
       accuracy: loc.horizontalAccuracy,
       heading: loc.heading,
       live: loc.isLive,
-      at: new Date(loc.timestamp).toISOString(),
+      at: utcDate.toISOString(),
+      localTime: utcDate.toLocaleString("en-AU", { timeZone: "Australia/Melbourne", dateStyle: "medium", timeStyle: "short" }),
     });
     this.memory.setFact("current-location", value, "personal");
   }
