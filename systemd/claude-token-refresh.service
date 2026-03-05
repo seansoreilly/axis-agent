@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Claude OAuth Token
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/bin/bash /home/ubuntu/agent/scripts/refresh-token.sh
+StandardOutput=journal
+StandardError=journal

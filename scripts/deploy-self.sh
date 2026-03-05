@@ -20,9 +20,12 @@ echo "==> Building TypeScript..."
 echo "==> Pruning dev dependencies..."
 npm prune --omit=dev 2>&1
 
-echo "==> Installing systemd service..."
+echo "==> Installing systemd services..."
 sudo cp "$AGENT_DIR/systemd/claude-agent.service" /etc/systemd/system/
+sudo cp "$AGENT_DIR/systemd/claude-token-refresh.service" /etc/systemd/system/
+sudo cp "$AGENT_DIR/systemd/claude-token-refresh.timer" /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now claude-token-refresh.timer
 
 echo "==> Restarting service..."
 sudo systemctl restart claude-agent

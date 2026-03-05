@@ -298,6 +298,8 @@ scripts/
   remember.js           # CLI for persistent fact CRUD
   lookup-contact.js     # Google Contacts lookup via People API
   daily_briefing.py     # Daily briefing script
+  refresh-token.sh      # OAuth token refresh (runs via systemd timer)
+  refresh-token.py      # Token refresh logic (called by refresh-token.sh)
 .claude/skills/
   facebook/             # Post text and photos to Facebook Page (with photo optimizer)
   twilio/               # SMS, voice calls, phone number management
@@ -308,7 +310,9 @@ scripts/
 .github/workflows/
   health-check.yml      # GitHub Actions health monitoring (every 30 min)
 systemd/
-  claude-agent.service  # Systemd unit file with security hardening
+  claude-agent.service          # Systemd unit file with security hardening
+  claude-token-refresh.service  # OAuth token refresh oneshot
+  claude-token-refresh.timer    # Hourly timer for token refresh
 deploy.sh               # Deploy from local to remote server
 ```
 
