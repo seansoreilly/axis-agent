@@ -279,6 +279,7 @@ src/
   index.ts              # Entry point - starts all services
   config.ts             # Environment config loader
   agent.ts              # Wraps Claude Agent SDK query() calls
+  auth.ts               # OAuth token refresh (proactive + periodic)
   gateway.ts            # Fastify HTTP server (webhook + task management)
   telegram.ts           # Telegram Bot API connector (commands, media, inline keyboards)
   telegram.test.ts      # Tests (vitest)

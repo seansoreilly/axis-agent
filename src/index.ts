@@ -5,9 +5,16 @@ import { Scheduler } from "./scheduler.js";
 import { TelegramIntegration } from "./telegram.js";
 import { createGateway } from "./gateway.js";
 import { info, error as logError } from "./logger.js";
+import { ensureValidToken, startTokenRefreshTimer } from "./auth.js";
 
 async function main(): Promise<void> {
   info("main", "Starting Claude Code Agent...");
+
+  // Ensure OAuth token is valid before starting
+  const tokenOk = await ensureValidToken();
+  if (!tokenOk) {
+    logError("main", "OAuth token refresh failed — agent may not work until credentials are renewed");
+  }
 
   const config = loadConfig();
   const memory = new Memory(config.memoryDir);
@@ -65,11 +72,15 @@ async function main(): Promise<void> {
     },
   });
 
+  // Start periodic token refresh (every 30 minutes)
+  const tokenRefreshTimer = startTokenRefreshTimer();
+
   info("main", "All systems running.");
 
   // Graceful shutdown
   const shutdown = (): void => {
     info("main", "Shutting down...");
+    clearInterval(tokenRefreshTimer);
     telegram.stop();
     scheduler.stopAll();
     process.exit(0);

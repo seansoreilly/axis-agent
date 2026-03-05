@@ -4,6 +4,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Config } from "./config.js";
 import type { Memory } from "./memory.js";
 import { error as logError, info } from "./logger.js";
+import { ensureValidToken } from "./auth.js";
 
 export interface AgentResult {
   text: string;
@@ -376,6 +377,9 @@ export class Agent {
     let totalCostUsd = 0;
     let isError = false;
 
+    // Pre-flight: ensure OAuth token is valid before spawning SDK
+    await ensureValidToken();
+
     try {
       const conversation = query({ prompt, options });
 
@@ -421,8 +425,13 @@ export class Agent {
       }
     } catch (error) {
       isError = true;
-      logError("agent", `Run failed: ${error instanceof Error ? error.message : String(error)}`);
-      resultText = "An internal error occurred. Please try again.";
+      const msg = error instanceof Error ? error.message : String(error);
+      logError("agent", `Run failed: ${msg}`);
+      if (msg.includes("exited with code 1")) {
+        resultText = "Claude Code process failed (likely auth/permissions). Token refresh was attempted — please retry.";
+      } else {
+        resultText = "An internal error occurred. Please try again.";
+      }
     }
 
     return {
