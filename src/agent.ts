@@ -135,11 +135,9 @@ export class Agent {
       `- Working directory: ${claude.workDir}`,
     ].join("\n");
 
-    const skillsContext = this.buildSkillsPrompt();
-
-    // If SOUL.md is loaded, use it + runtime context + skills
+    // If SOUL.md is loaded, use it + runtime context
     if (this.soulMd) {
-      return `${this.soulMd}\n\n${runtimeContext}${skillsContext}`;
+      return `${this.soulMd}\n\n${runtimeContext}`;
     }
 
     // Fallback: built-in default (kept for backwards compatibility)
@@ -213,12 +211,15 @@ export class Agent {
       '1. Run: node /home/ubuntu/agent/scripts/lookup-contact.js "<name>"',
       "2. Extract phone/email from the JSON output",
       "3. Use the appropriate skill (Twilio for SMS/calls, Gmail for email) — read its SKILL.md for usage",
-    ].join("\n") + this.buildSkillsPrompt();
+      "",
+      "You have skills installed in `.claude/skills/`. Run `ls .claude/skills/` to discover them, then read the SKILL.md for usage.",
+    ].join("\n");
   }
 
   /** Build extended prompt sections (included on first message of session only). */
   private buildExtendedPrompt(): string {
     return [
+      this.buildSkillsPrompt(),
       "",
       "## Model Routing & Escalation",
       "You are running on Haiku (fast, cheap). Handle most tasks directly — you're the default for everything.",
