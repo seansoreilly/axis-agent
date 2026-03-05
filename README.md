@@ -8,13 +8,13 @@ An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.
 
 | | Claude Code Agent | OpenClaw |
 |---|---|---|
-| **Token cost** | Uses your Max/Pro plan tokens (included in subscription) | Requires separate API key billing |
-| **Always up to date** | Inherits Claude Code's tools, models, and capabilities as they ship | Must wait for OpenClaw maintainers to integrate updates |
-| **Tool ecosystem** | Full Claude Code toolset (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task) + MCP servers | Custom skills system (ClawHub — with known supply-chain risks from malicious skills) |
-| **Security** | Anthropic-managed sandboxing, no third-party skill registry | User-managed Docker sandbox recommended; 386 malicious skills found on ClawHub (Feb 2026) |
-| **Complexity** | ~2,300 lines of TypeScript, single Node.js process | Full Docker Compose stack, 4+ GB RAM recommended |
-| **LLM lock-in** | Claude only | Multi-provider (Claude, GPT, DeepSeek) |
-| **Messaging** | Telegram + HTTP webhook | 10+ platforms (WhatsApp, Slack, Discord, etc.) |
+| <img src="docs/images/token-cost.png" width="24"> **Token cost** | Uses your Max/Pro plan tokens (included in subscription) | Requires separate API key billing |
+| <img src="docs/images/always-updated.png" width="24"> **Always up to date** | Inherits Claude Code's tools, models, and capabilities as they ship | Must wait for OpenClaw maintainers to integrate updates |
+| <img src="docs/images/tool-ecosystem.png" width="24"> **Tool ecosystem** | Full Claude Code toolset (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task) + MCP servers | Custom skills system (ClawHub — with known supply-chain risks from malicious skills) |
+| <img src="docs/images/security.png" width="24"> **Security** | Anthropic-managed sandboxing, no third-party skill registry | User-managed Docker sandbox recommended; 386 malicious skills found on ClawHub (Feb 2026) |
+| <img src="docs/images/complexity-simple.png" width="24"> **Complexity** | ~2,300 lines of TypeScript, single Node.js process | Full Docker Compose stack, 4+ GB RAM recommended |
+| <img src="docs/images/llm-lock-in.png" width="24"> **LLM lock-in** | Claude only | Multi-provider (Claude, GPT, DeepSeek) |
+| <img src="docs/images/messaging.png" width="24"> **Messaging** | Telegram + HTTP webhook | 10+ platforms (WhatsApp, Slack, Discord, etc.) |
 
 The key advantage: **if you're already paying for a Claude Max or Pro plan, this agent uses those same tokens at no additional cost.** OpenClaw requires a separate API key with per-token billing.
 

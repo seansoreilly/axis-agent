@@ -9,5 +9,6 @@ google-credentials.json
 google-token.json
 *.json.bak
 __pycache__/
+nanobanana-output/
 *.pem
 *.key
