@@ -30,12 +30,21 @@ interface OwnTracksLocation {
   [key: string]: unknown;
 }
 
+interface TwilioSmsBody {
+  From?: string;
+  To?: string;
+  Body?: string;
+  MessageSid?: string;
+  [key: string]: string | undefined;
+}
+
 interface GatewayOptions {
   port: number;
   agent: Agent;
   scheduler: Scheduler;
   memory?: Memory;
   owntracksToken?: string;
+  onInboundSms?: (from: string, body: string) => void;
 }
 
 export async function createGateway(
@@ -100,6 +109,31 @@ export async function createGateway(
     }
     return { ok: true };
   });
+
+  // Twilio inbound SMS webhook (only if callback is configured)
+  if (opts.onInboundSms) {
+    app.addContentTypeParser(
+      "application/x-www-form-urlencoded",
+      { parseAs: "string" },
+      (_req, body, done) => {
+        const params = new URLSearchParams(body as string);
+        const result: Record<string, string> = {};
+        params.forEach((value, key) => { result[key] = value; });
+        done(null, result);
+      }
+    );
+
+    app.post<{ Body: TwilioSmsBody }>("/twilio/inbound-sms", async (request, reply) => {
+      const from = request.body?.From ?? "unknown";
+      const body = request.body?.Body ?? "";
+      info("gateway", `Inbound SMS from ${from}: ${body}`);
+      opts.onInboundSms!(from, body);
+      reply.header("Content-Type", "text/xml");
+      return "<Response/>";
+    });
+
+    info("gateway", "Twilio inbound SMS endpoint enabled at /twilio/inbound-sms");
+  }
 
   // OwnTracks location ingestion (only if token is configured)
   if (owntracksToken && memory) {

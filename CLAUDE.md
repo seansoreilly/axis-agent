@@ -34,7 +34,7 @@ Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-a
 - `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Routes: `GET /health`, `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `POST /owntracks` (location ingestion, enabled when `OWNTRACKS_TOKEN` is set).
 - `TrelloMcpServer` (`src/trello-mcp-server.ts`) — custom MCP server exposing Trello REST API as tools (list boards, create/update/archive cards, manage checklists, comments). Runs as stdio MCP server configured in `.mcp.json`. Requires `TRELLO_API_KEY` and `TRELLO_API_TOKEN` env vars.
 - `Memory` (`src/memory.ts`) — JSON file store at `~/.claude-agent/memory/store.json`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
-- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`.
+- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by SDK). No `ANTHROPIC_API_KEY` needed.
 
 ## ESM Module System
 
@@ -135,6 +135,7 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 | `google-contacts-token` | `/home/ubuntu/.claude-agent/google-contacts-token.json` |
 | `env-secrets` (ZAPIER_API_KEY) | `/home/ubuntu/agent/.env` (via EnvironmentFile) |
 | `env-secrets` (TRELLO_API_KEY, TRELLO_API_TOKEN) | `/home/ubuntu/agent/.env` (via EnvironmentFile) |
+| `claude-oauth` | `/home/ubuntu/.claude/.credentials.json` (OAuth credentials) |
 
 **Workflows:**
 - **Sync secrets:** `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)

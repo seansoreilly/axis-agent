@@ -19,6 +19,7 @@ BW_FACEBOOK_ID="${BW_FACEBOOK_ID:?Set BW_FACEBOOK_ID env var}"
 BW_GOOGLE_SA_ID="${BW_GOOGLE_SA_ID:?Set BW_GOOGLE_SA_ID env var}"
 BW_GOOGLE_CREDS_ID="${BW_GOOGLE_CREDS_ID:?Set BW_GOOGLE_CREDS_ID env var}"
 BW_GOOGLE_CONTACTS_TOKEN_ID="${BW_GOOGLE_CONTACTS_TOKEN_ID:-}"
+BW_CLAUDE_OAUTH_ID="${BW_CLAUDE_OAUTH_ID:-}"
 
 # Authenticate / unlock Bitwarden (skip if BW_SESSION already set)
 if [ -z "${BW_SESSION:-}" ]; then
@@ -89,6 +90,9 @@ push_secret "$BW_GOOGLE_SA_ID"   "$REMOTE_CLAUDE_DIR/google-service-account.json
 push_secret "$BW_GOOGLE_CREDS_ID" "$REMOTE_CLAUDE_DIR/google-credentials.json"        "google-credentials"
 if [ -n "$BW_GOOGLE_CONTACTS_TOKEN_ID" ]; then
   push_secret "$BW_GOOGLE_CONTACTS_TOKEN_ID" "$REMOTE_CLAUDE_DIR/google-contacts-token.json" "google-contacts-token"
+fi
+if [ -n "$BW_CLAUDE_OAUTH_ID" ]; then
+  push_secret "$BW_CLAUDE_OAUTH_ID" "/home/ubuntu/.claude/.credentials.json" "claude-oauth"
 fi
 
 bw lock

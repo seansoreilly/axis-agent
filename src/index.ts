@@ -53,6 +53,16 @@ async function main(): Promise<void> {
     scheduler,
     memory,
     owntracksToken: config.owntracksToken,
+    onInboundSms: (from, body) => {
+      if (primaryUser && telegram) {
+        telegram
+          .sendNotification(primaryUser, `📱 SMS from ${from}:\n${body}`)
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            logError("gateway", `Failed to forward SMS notification: ${msg}`);
+          });
+      }
+    },
   });
 
   info("main", "All systems running.");

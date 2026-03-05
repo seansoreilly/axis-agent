@@ -25,7 +25,6 @@ SECRET_KEYS=(
   FACEBOOK_APP_SECRET
   FACEBOOK_PAGE_ID
   FACEBOOK_PAGE_TOKEN
-  ANTHROPIC_API_KEY
 )
 
 echo "==> Step 1: Backing up server secrets locally to $BACKUP_DIR"
