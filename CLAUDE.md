@@ -17,7 +17,7 @@ npx vitest run src/telegram.test.ts  # Run a single test file
 **Deploy (on the server itself):** `bash scripts/deploy-self.sh` — builds, prunes devDeps, installs systemd service, restarts.
 **Deploy (remote):** `./deploy.sh` — SSH-based deploy using `DEPLOY_HOST` env var. Automatically pulls agent-created files from the instance before pushing (additive only, won't overwrite local edits). Use `./deploy.sh --dry-run` to preview what rsync would sync/delete without making changes.
 
-**Before deploying:** Always check for hardcoded secrets, credentials, API keys, tokens, or PII in the diff. Never deploy code that contains embedded secrets — credentials must come from env vars or external files only.
+**Before committing:** Always check for hardcoded secrets, credentials, API keys, tokens, or PII in the diff. Never commit code that contains embedded secrets — credentials must come from env vars or external files only. Always update `README.md` to reflect any user-facing changes (new features, commands, integrations, config changes).
 
 ## Project Overview
 

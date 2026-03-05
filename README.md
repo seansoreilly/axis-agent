@@ -295,6 +295,7 @@ scripts/
   self-heal.sh          # Auto-restart service if inactive (systemd timer)
   update-sdk.sh         # Daily cron to update Agent SDK and restart if changed
   remember.js           # CLI for persistent fact CRUD
+  lookup-contact.js     # Google Contacts lookup via People API
   daily_briefing.py     # Daily briefing script
 .claude/skills/
   facebook/             # Post text and photos to Facebook Page (with photo optimizer)
