@@ -1,5 +1,5 @@
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join, basename } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Config } from "./config.js";
 import type { Memory } from "./memory.js";
@@ -49,10 +49,44 @@ export function loadSoulMd(basePath?: string): string | null {
   return null;
 }
 
+interface SkillInfo {
+  name: string;
+  description: string;
+  dir: string;
+}
+
+/**
+ * Scan .claude/skills/ for SKILL.md files and extract name + description
+ * from YAML frontmatter. Returns a list of discovered skills.
+ */
+export function discoverSkills(skillsDir: string): SkillInfo[] {
+  if (!existsSync(skillsDir)) return [];
+  const skills: SkillInfo[] = [];
+  for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillMdPath = join(skillsDir, entry.name, "SKILL.md");
+    if (!existsSync(skillMdPath)) continue;
+    const content = readFileSync(skillMdPath, "utf-8");
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) continue;
+    const nameMatch = fmMatch[1].match(/^name:\s*(.+)$/m);
+    const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m);
+    if (nameMatch && descMatch) {
+      skills.push({
+        name: nameMatch[1].trim(),
+        description: descMatch[1].trim(),
+        dir: join(skillsDir, entry.name),
+      });
+    }
+  }
+  return skills;
+}
+
 export class Agent {
   private config: Config;
   private memory: Memory;
   private soulMd: string | null;
+  private skillsDir: string;
 
   constructor(config: Config, memory: Memory, soulMdPath?: string) {
     this.config = config;
@@ -63,6 +97,29 @@ export class Agent {
     } else {
       info("agent", "No SOUL.md found, using built-in default prompt");
     }
+    this.skillsDir = join(config.claude.workDir, ".claude", "skills");
+    const skills = discoverSkills(this.skillsDir);
+    if (skills.length > 0) {
+      info("agent", `Discovered ${skills.length} skills: ${skills.map(s => s.name).join(", ")}`);
+    }
+  }
+
+  /** Build dynamic skills section from discovered SKILL.md files (re-scanned each call). */
+  private buildSkillsPrompt(): string {
+    const skills = discoverSkills(this.skillsDir);
+    if (skills.length === 0) return "";
+    const lines = [
+      "",
+      "## Available Skills",
+      "You have the following skills installed. Before using a skill, read its SKILL.md for full usage instructions.",
+      "",
+    ];
+    for (const skill of skills) {
+      lines.push(`- **${skill.name}** (${skill.dir}/SKILL.md) — ${skill.description}`);
+    }
+    lines.push("");
+    lines.push("To use a skill: `cat <skill_dir>/SKILL.md` to read the instructions, then follow them.");
+    return lines.join("\n");
   }
 
   /** Build the core system prompt (always included). */
@@ -78,9 +135,11 @@ export class Agent {
       `- Working directory: ${claude.workDir}`,
     ].join("\n");
 
-    // If SOUL.md is loaded, use it + runtime context
+    const skillsContext = this.buildSkillsPrompt();
+
+    // If SOUL.md is loaded, use it + runtime context + skills
     if (this.soulMd) {
-      return `${this.soulMd}\n\n${runtimeContext}`;
+      return `${this.soulMd}\n\n${runtimeContext}${skillsContext}`;
     }
 
     // Fallback: built-in default (kept for backwards compatibility)
@@ -153,11 +212,8 @@ export class Agent {
       "Steps:",
       '1. Run: node /home/ubuntu/agent/scripts/lookup-contact.js "<name>"',
       "2. Extract phone/email from the JSON output",
-      "3. Proceed with the action:",
-      "   - SMS: python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to '<phone>' --body '<message>'",
-      "   - Email: use the Gmail skill",
-      "   - Voice call: python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/make_call.py --to '<phone>' --message '<text>'",
-    ].join("\n");
+      "3. Use the appropriate skill (Twilio for SMS/calls, Gmail for email) — read its SKILL.md for usage",
+    ].join("\n") + this.buildSkillsPrompt();
   }
 
   /** Build extended prompt sections (included on first message of session only). */
@@ -244,15 +300,15 @@ export class Agent {
       "",
       "### 3. Custom Skill",
       "If no MCP server or compatible community skill exists, build one in `.claude/skills/<name>/`",
-      "with a `SKILL.md` and supporting scripts. Use existing skills as templates:",
-      "- See `.claude/skills/facebook/` and `.claude/skills/twilio/` for examples",
+      "with a `SKILL.md` (YAML frontmatter: name, description, tags) and supporting scripts.",
+      "Use existing skills listed in 'Available Skills' above as templates.",
       "- Prefer Python for API integrations, Bash for system tasks",
+      "- New skills are auto-discovered immediately — no restart needed",
       "",
       "### Autonomous Skill Creation",
       "When creating a custom skill, follow the detailed template in `.claude/skills/skill-generator/SKILL.md`.",
       "Before creating, check `.claude/skills/skill-generator/LEARNINGS.md` for past lessons.",
       "After creating or fixing a skill, append an entry to the learnings log.",
-      "Use existing skills (facebook, twilio, gmail) as concrete reference implementations.",
       "",
       "### 4. One-off Bash",
       "For simple, non-recurring needs (convert an image, quick API call), just use Bash directly.",
