@@ -11,3 +11,5 @@ google-token.json
 __pycache__/
 *.pem
 *.key
+nanobanana-output/
+*:Zone.Identifier
