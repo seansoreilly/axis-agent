@@ -1,5 +1,5 @@
 [Unit]
-Description=Claude Code Agent
+Description=Axis Agent
 After=network.target
 
 [Service]

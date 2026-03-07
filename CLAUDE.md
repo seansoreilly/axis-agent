@@ -21,7 +21,7 @@ npx vitest run src/telegram.test.ts  # Run a single test file
 
 ## Project Overview
 
-Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-agent-sdk`) with Telegram as the primary interface. Deployed on AWS Lightsail behind Tailscale VPN, running as a systemd service.
+Axis Agent — always-on AI agent powered by the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) with Telegram as the primary interface. Deployed on AWS Lightsail behind Tailscale VPN, running as a systemd service.
 
 ## Architecture
 
@@ -42,7 +42,7 @@ Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-a
 - `Auth` (`src/auth.ts`) — OAuth token refresh for Claude credentials (`~/.claude/.credentials.json`). Proactively refreshes tokens 10 minutes before expiry.
 - `TrelloMcpServer` (`src/trello-mcp-server.ts`) — custom MCP server exposing Trello REST API as tools (list boards, create/update/archive cards, manage checklists, comments). Runs as stdio MCP server configured in `.mcp.json`. Requires `TRELLO_API_KEY` and `TRELLO_API_TOKEN` env vars.
 - `Memory` (`src/memory.ts`) — JSON file store at `~/.claude-agent/memory/store.json`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
-- `Logger` (`src/logger.ts`) — minimal structured logger writing to stdout/stderr with `[claude-agent] [component]` prefix. Used by all components via `info()` and `error()` functions.
+- `Logger` (`src/logger.ts`) — minimal structured logger writing to stdout/stderr with `[axis-agent] [component]` prefix. Used by all components via `info()` and `error()` functions.
 - `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by `Auth` module). No `ANTHROPIC_API_KEY` needed.
 
 ## ESM Module System

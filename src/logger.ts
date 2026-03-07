@@ -1,4 +1,4 @@
-const PREFIX = "claude-agent";
+const PREFIX = "axis-agent";
 
 function write(level: "info" | "error", component: string, message: string): void {
   const entry = {

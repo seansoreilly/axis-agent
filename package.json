@@ -1,7 +1,7 @@
 {
-  "name": "claude-code-agent",
-  "version": "0.4.0",
-  "description": "Always-on AI agent powered by Claude Code Agent SDK with Telegram integration",
+  "name": "axis-agent",
+  "version": "0.5.0",
+  "description": "Axis Agent — always-on AI agent powered by Claude Agent SDK with Telegram integration",
   "type": "module",
   "scripts": {
     "build": "tsc",

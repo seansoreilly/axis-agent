@@ -9,7 +9,7 @@ describe("Agent prompt construction", () => {
         if (opts?.categories?.includes("personal")) {
           return "- timezone: Australia/Sydney";
         }
-        return "- project: claude-agent";
+        return "- project: axis-agent";
       },
       getLastSessionSummary: () => " - discussed refactor",
     };

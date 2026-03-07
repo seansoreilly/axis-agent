@@ -1,12 +1,20 @@
-# Claude Code Agent
+<p align="center">
+  <img src="assets/logo.png" alt="Axis Agent" width="400">
+</p>
 
-An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview). Receives messages via Telegram, dispatches them to Claude Code, and returns results. General-purpose assistant + task automation (web browsing, file management, research, scheduled tasks, calendar integration, email, social media posting).
+<p align="center">
+  An always-on AI agent powered by the <a href="https://platform.claude.com/docs/en/agent-sdk/overview">Claude Agent SDK</a>.<br>
+  Receives messages via Telegram, dispatches them to Claude Code, and returns results.<br>
+  General-purpose assistant + task automation.
+</p>
+
+---
 
 ## Why This Over OpenClaw?
 
-[OpenClaw](https://github.com/openclaw/openclaw) is a popular open-source AI agent (140k+ stars) that connects to messaging platforms. This project takes a different approach by wrapping Claude Code directly via the Agent SDK:
+[OpenClaw](https://github.com/openclaw/openclaw) is a popular open-source AI agent (140k+ stars) that connects to messaging platforms. Axis Agent takes a different approach by wrapping Claude Code directly via the Agent SDK:
 
-| | Claude Code Agent | OpenClaw |
+| | Axis Agent | OpenClaw |
 |---|---|---|
 | **Token cost** | Uses your Max/Pro plan tokens (included in subscription) | Requires separate API key billing |
 | **Always up to date** | Inherits Claude Code's tools, models, and capabilities as they ship | Must wait for OpenClaw maintainers to integrate updates |
@@ -134,8 +142,8 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/seansoreilly/claude-code-agent.git
-cd claude-code-agent
+git clone https://github.com/seansoreilly/axis-agent.git
+cd axis-agent
 npm install
 npm run build
 ```
@@ -179,7 +187,7 @@ The gateway binds to `127.0.0.1` — it is not publicly accessible. Use [Tailsca
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --hostname=claude-code-agent
+sudo tailscale up --hostname=axis-agent
 ```
 
 Authenticate via the URL printed, then verify:
@@ -340,7 +348,7 @@ scripts/
 .github/workflows/
   health-check.yml      # GitHub Actions health monitoring (every 30 min)
 systemd/
-  claude-agent.service          # Systemd unit file with security hardening
+  claude-agent.service          # Systemd unit file (Axis Agent) with security hardening
   claude-token-refresh.service  # OAuth token refresh oneshot
   claude-token-refresh.timer    # Hourly timer for token refresh
 deploy.sh               # Deploy from local to remote server

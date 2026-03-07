@@ -11,7 +11,7 @@ import { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
 
 async function main(): Promise<void> {
-  info("main", "Starting Claude Code Agent...");
+  info("main", "Starting Axis Agent...");
 
   // Ensure OAuth token is valid before starting
   const tokenOk = await ensureValidToken();
