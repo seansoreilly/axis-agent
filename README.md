@@ -221,6 +221,14 @@ If developing on a local machine, use `deploy.sh` to rsync and restart on the se
 DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh
 ```
 
+Every deploy automatically runs post-deploy regression checks (service health, gateway endpoint, Telegram Bot API connectivity, polling mode verification). If any check fails, the deploy exits non-zero.
+
+Use `--self-heal` to enable automatic recovery: on failure, the agent receives the error details via webhook and attempts to diagnose and fix the issue (up to 2 retries). If self-heal is exhausted, a Telegram alert is sent.
+
+```bash
+DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh --self-heal
+```
+
 ## Usage
 
 ### Telegram Commands
@@ -308,6 +316,7 @@ scripts/
   rollback-secrets.sh   # Restore server secrets from local backup
   deploy-self.sh        # Self-deploy (runs on the server)
   health-check.sh       # Local health monitoring (Tailscale, AWS, SSH, service)
+  post-deploy-check.sh  # Post-deploy regression tests (service, gateway, Telegram API)
   self-heal.sh          # Auto-restart service if inactive (systemd timer)
   update-sdk.sh         # Daily cron to update Agent SDK and restart if changed
   remember.js           # CLI for persistent fact CRUD
