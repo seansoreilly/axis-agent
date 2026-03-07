@@ -1,9 +1,25 @@
-const PREFIX = "[claude-agent]";
+const PREFIX = "claude-agent";
+
+function write(level: "info" | "error", component: string, message: string): void {
+  const entry = {
+    app: PREFIX,
+    level,
+    component,
+    message,
+    timestamp: new Date().toISOString(),
+  };
+  const line = JSON.stringify(entry);
+  if (level === "error") {
+    process.stderr.write(`${line}\n`);
+  } else {
+    process.stdout.write(`${line}\n`);
+  }
+}
 
 export function info(component: string, message: string): void {
-  process.stdout.write(`${PREFIX} [${component}] ${message}\n`);
+  write("info", component, message);
 }
 
 export function error(component: string, message: string): void {
-  process.stderr.write(`${PREFIX} [${component}] ERROR: ${message}\n`);
+  write("error", component, message);
 }

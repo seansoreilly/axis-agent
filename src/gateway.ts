@@ -3,6 +3,9 @@ import type { Agent } from "./agent.js";
 import type { Memory } from "./memory.js";
 import type { Scheduler, ScheduledTask } from "./scheduler.js";
 import { info } from "./logger.js";
+import type { JobService } from "./jobs.js";
+import { metrics } from "./metrics.js";
+import type { SqliteStore } from "./persistence.js";
 
 interface WebhookBody {
   prompt: string;
@@ -43,6 +46,8 @@ interface GatewayOptions {
   agent: Agent;
   scheduler: Scheduler;
   memory?: Memory;
+  jobs?: JobService;
+  store?: SqliteStore;
   owntracksToken?: string;
   onInboundSms?: (from: string, body: string) => void;
 }
@@ -50,7 +55,7 @@ interface GatewayOptions {
 export async function createGateway(
   opts: GatewayOptions
 ): Promise<ReturnType<typeof Fastify>> {
-  const { port, agent, scheduler, memory, owntracksToken } = opts;
+  const { port, agent, scheduler, memory, owntracksToken, jobs, store } = opts;
   const app = Fastify({ bodyLimit: 10_240 });
 
   app.get("/health", async () => ({
@@ -66,9 +71,27 @@ export async function createGateway(
       return reply.status(400).send({ error: "prompt is required" });
     }
 
-    const result = await agent.run(prompt, { sessionId });
+    metrics.increment("gateway.webhook.requests");
+
+    const result = jobs
+      ? await jobs.waitForCompletion(
+          jobs.enqueuePromptJob({
+            prompt,
+            sessionId,
+            source: "webhook",
+          }).id
+        ).then((job) => ({
+          text: job.resultText ?? job.errorText ?? "",
+          sessionId: sessionId ?? "",
+          durationMs: 0,
+          totalCostUsd: 0,
+          isError: job.status !== "succeeded",
+          jobId: job.id,
+        }))
+      : await agent.run(prompt, { sessionId });
 
     return {
+      jobId: "jobId" in result ? result.jobId : undefined,
       text: result.text,
       sessionId: result.sessionId,
       durationMs: result.durationMs,
@@ -110,6 +133,24 @@ export async function createGateway(
     return { ok: true };
   });
 
+  app.get("/admin/status", async () => ({
+    status: "ok",
+    uptime: process.uptime(),
+    metrics: metrics.snapshot(),
+    tasks: scheduler.list().length,
+    recentJobs: jobs?.listJobs(10) ?? [],
+  }));
+
+  app.get("/admin/jobs", async () => ({
+    jobs: jobs?.listJobs(50) ?? [],
+  }));
+
+  app.get("/admin/events", async () => ({
+    events: store?.listEvents(100) ?? [],
+  }));
+
+  app.get("/admin/metrics", async () => metrics.snapshot());
+
   // Twilio inbound SMS webhook (only if callback is configured)
   if (opts.onInboundSms) {
     app.addContentTypeParser(
@@ -127,6 +168,7 @@ export async function createGateway(
       const from = request.body?.From ?? "unknown";
       const body = request.body?.Body ?? "";
       info("gateway", `Inbound SMS from ${from}: ${body}`);
+      metrics.increment("gateway.twilio.inbound_sms");
       opts.onInboundSms!(from, body);
       reply.header("Content-Type", "text/xml");
       return "<Response/>";
@@ -173,6 +215,7 @@ export async function createGateway(
 
       memory.setFact("current-location", JSON.stringify(location), "personal");
       info("gateway", `Location updated: ${body.lat},${body.lon} (acc: ${body.acc ?? "?"}m)`);
+      metrics.increment("gateway.owntracks.updates");
 
       return [];
     });

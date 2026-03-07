@@ -6,6 +6,9 @@ import { TelegramIntegration } from "./telegram.js";
 import { createGateway } from "./gateway.js";
 import { info, error as logError } from "./logger.js";
 import { ensureValidToken, startTokenRefreshTimer } from "./auth.js";
+import { SqliteStore } from "./persistence.js";
+import { JobService } from "./jobs.js";
+import { metrics } from "./metrics.js";
 
 async function main(): Promise<void> {
   info("main", "Starting Claude Code Agent...");
@@ -17,8 +20,10 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
+  const store = new SqliteStore(config.memoryDir);
   const memory = new Memory(config.memoryDir);
   const agent = new Agent(config, memory);
+  const jobs = new JobService({ store, agent });
 
   // Set up scheduler with Telegram notifications (created before telegram so we can pass it)
   let telegram: TelegramIntegration;
@@ -38,7 +43,8 @@ async function main(): Promise<void> {
           });
       }
     },
-    config.memoryDir
+    config.memoryDir,
+    jobs
   );
 
   // Set up Telegram integration (with scheduler reference)
@@ -54,11 +60,13 @@ async function main(): Promise<void> {
   telegram.start();
 
   // Start HTTP gateway
-  await createGateway({
+  const gateway = await createGateway({
     port: config.server.port,
     agent,
     scheduler,
     memory,
+    jobs,
+    store,
     owntracksToken: config.owntracksToken,
     onInboundSms: (from, body) => {
       if (primaryUser && telegram) {
@@ -74,6 +82,7 @@ async function main(): Promise<void> {
 
   // Start periodic token refresh (every 30 minutes)
   const tokenRefreshTimer = startTokenRefreshTimer();
+  metrics.setGauge("service.started", Date.now());
 
   info("main", "All systems running.");
 
@@ -83,7 +92,7 @@ async function main(): Promise<void> {
     clearInterval(tokenRefreshTimer);
     telegram.stop();
     scheduler.stopAll();
-    process.exit(0);
+    gateway.close().finally(() => process.exit(0));
   };
 
   process.on("SIGTERM", shutdown);

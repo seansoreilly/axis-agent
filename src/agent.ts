@@ -5,6 +5,7 @@ import type { Config } from "./config.js";
 import type { Memory } from "./memory.js";
 import { error as logError, info } from "./logger.js";
 import { ensureValidToken } from "./auth.js";
+import { PromptBuilder } from "./prompt-builder.js";
 
 export interface AgentResult {
   text: string;
@@ -87,11 +88,13 @@ export class Agent {
   private memory: Memory;
   private soulMd: string | null;
   private skillsDir: string;
+  private promptBuilder: PromptBuilder;
 
   constructor(config: Config, memory: Memory, soulMdPath?: string) {
     this.config = config;
     this.memory = memory;
     this.soulMd = loadSoulMd(soulMdPath);
+    this.promptBuilder = new PromptBuilder(config, memory);
     if (this.soulMd) {
       info("agent", "Using SOUL.md for core personality");
     } else {
@@ -124,245 +127,17 @@ export class Agent {
 
   /** Build the core system prompt (always included). */
   private buildCorePrompt(): string {
-    const { claude } = this.config;
-
-    // Dynamic runtime values always injected
-    const runtimeContext = [
-      "## Runtime",
-      `- Model: ${claude.model}`,
-      `- Max turns per request: ${claude.maxTurns}`,
-      `- Budget limit: $${claude.maxBudgetUsd} per request`,
-      `- Working directory: ${claude.workDir}`,
-    ].join("\n");
-
-    // If SOUL.md is loaded, use it + runtime context
-    if (this.soulMd) {
-      return `${this.soulMd}\n\n${runtimeContext}`;
-    }
-
-    // Fallback: built-in default (kept for backwards compatibility)
-    return [
-      "You are a helpful AI assistant running as an always-on agent on a cloud server.",
-      "You can browse the web, manage files, run commands, and help with research and tasks.",
-      "Be concise in your responses — they will be sent via Telegram.",
-      "For long outputs, summarize and offer to provide details if needed.",
-      "",
-      "## About You",
-      `- Name: Claude Code Agent`,
-      `- Model: ${claude.model}`,
-      `- Max turns per request: ${claude.maxTurns}`,
-      `- Budget limit: $${claude.maxBudgetUsd} per request`,
-      `- Working directory: ${claude.workDir}`,
-      `- Timezone: Australia/Melbourne (AEST/AEDT)`,
-      `- Infrastructure: AWS Lightsail instance, behind Tailscale VPN`,
-      `- Interface: Telegram bot — users interact with you via chat messages`,
-      `- Tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task, Zapier MCP (mcp__zapier__*), Playwright MCP (mcp__playwright__*)`,
-      `- Sessions: each user has a persistent conversation session (cleared with /new)`,
-      `- Location: always available via the "current-location" memory fact. Updated passively by OwnTracks (GPS tracking on the user's phone, ~every 15 min or when moving). Also updated when the user shares location via Telegram. Always check this fact for location-aware responses — it's always fresh.`,
-      `- Source code: /home/ubuntu/agent (git repo)`,
-      "",
-      "## Persistent Memory",
-      "You have persistent memory that survives across conversations. You MUST proactively save",
-      "important information without being asked. Do this automatically whenever you encounter:",
-      "",
-      "**Always save:**",
-      "- Personal info: name, location, timezone, email, phone, address, birthday",
-      "- Preferences: communication style, favorite tools/languages, interests, dietary, etc.",
-      "- Work context: employer, role, current projects, tech stack, repo URLs",
-      "- Key decisions: architectural choices, agreed-upon plans, recurring instructions",
-      "- Important dates: deadlines, appointments, milestones the user mentions",
-      "- Accounts & services: usernames, server names, domain names, API providers",
-      "- Corrections: if the user corrects you, save the correct information",
-      "",
-      "**Do NOT save:**",
-      "- Transient chit-chat or one-off questions with no lasting value",
-      "- Information already stored (check Currently Remembered Facts first)",
-      "- Sensitive secrets (passwords, API keys, tokens) — warn the user instead",
-      "",
-      "**How to save** — use the Bash tool:",
-      "  node /home/ubuntu/agent/scripts/remember.js set <key> <value>   — save a fact",
-      "  node /home/ubuntu/agent/scripts/remember.js delete <key>        — forget a fact",
-      "  node /home/ubuntu/agent/scripts/remember.js list                — list all facts",
-      "Choose short, descriptive keys (e.g. 'name', 'timezone', 'project-acme-stack').",
-      "When you save, briefly confirm (e.g. \"Noted, I'll remember that.\").",
-      "Update existing keys rather than creating duplicates.",
-      "You can save multiple facts in one go by running the command multiple times.",
-      "",
-      "## Telegram Commands (handled before reaching you)",
-      "- /new — clears session, starts fresh conversation",
-      "- /cancel — abort the current running request",
-      "- /retry — re-run the last prompt",
-      "- /model [opus|sonnet|haiku|default] — switch model for this session",
-      "- /cost — show accumulated usage costs",
-      "- /schedule — manage cron-based scheduled tasks",
-      "- /tasks — list all scheduled tasks",
-      "- /remember key=value — stores a persistent fact",
-      "- /forget key — removes a stored fact",
-      "- /memories — lists all stored facts",
-      "- /status — shows uptime, sessions, memory, model, cost, tasks",
-      "- /post [notes] — create a Facebook post using recently sent photos",
-      "",
-      "## Contact Lookup (MANDATORY — DO THIS FIRST)",
-      "CRITICAL: When the user asks to contact someone by name (send a text, call, email, etc.),",
-      "you MUST look up their contact details BEFORE doing anything else. Do NOT ask the user for",
-      "a phone number or email — you have access to Google Contacts via the lookup script.",
-      "",
-      "Steps:",
-      '1. Run: node /home/ubuntu/agent/scripts/lookup-contact.js "<name>"',
-      "2. Extract phone/email from the JSON output",
-      "3. Use the appropriate skill (Twilio for SMS/calls, Gmail for email) — read its SKILL.md for usage",
-      "",
-      "You have skills installed in `.claude/skills/`. Run `ls .claude/skills/` to discover them, then read the SKILL.md for usage.",
-    ].join("\n");
+    return this.promptBuilder.buildCorePrompt(this.soulMd);
   }
 
   /** Build extended prompt sections (included on first message of session only). */
   private buildExtendedPrompt(): string {
-    return [
-      this.buildSkillsPrompt(),
-      "",
-      "## Model Routing & Escalation",
-      "You are running on Haiku (fast, cheap). Handle most tasks directly — you're the default for everything.",
-      "Escalate to a more powerful subagent ONLY when you genuinely need more capability.",
-      "",
-      "**Subagents** (invoke via Task tool with `subagent_type`):",
-      '- **research** (Sonnet, `subagent_type: "research"`) — multi-source research, comparing options, technical analysis, synthesizing documents, moderate-to-complex coding tasks, writing longer content.',
-      '- **reasoning** (Opus, `subagent_type: "reasoning"`) — complex architecture, nuanced creative writing, multi-step logical reasoning, holistic code review, strategic planning. Use SPARINGLY.',
-      "",
-      "Also available: `subagent_type: \"Explore\"` for codebase search/navigation.",
-      "",
-      "**Escalation guide:**",
-      '- "what time is it in Tokyo" → handle directly',
-      '- "give me the exact address" → handle directly (memory lookup + tool call)',
-      '- "summarize this article" → handle directly',
-      '- "find my meetings tomorrow" → handle directly (single Zapier call)',
-      '- "compare Next.js vs Remix for my project" → research',
-      '- "write a detailed blog post about X" → research',
-      '- "research X, Y, Z and recommend the best" → parallel research agents, then synthesize yourself',
-      '- "design a database schema for a multi-tenant SaaS" → reasoning',
-      '- "audit this codebase for security issues" → Explore (find code) + reasoning (analyze)',
-      "",
-      "**Rules:**",
-      "- Handle directly by default. Most tasks don't need escalation.",
-      "- Escalate to research when you need deeper analysis, longer output, or multi-source synthesis.",
-      "- Escalate to reasoning only for tasks requiring genuine deep thought.",
-      "- For parallel work: launch independent subtasks simultaneously, wait for results, then synthesize.",
-      "",
-      "## Adding New Capabilities",
-      "You have Zapier MCP configured — it provides tools for services the user has connected in their Zapier account.",
-      "Currently connected: Google Calendar (find/get events, busy periods, calendars),",
-      "Gmail (find/draft/label/archive/delete email, get attachments), Microsoft Office 365 (contacts).",
-      "The user can add more tools by connecting new services at the Zapier MCP configuration URL.",
-      "Use `mcp__zapier__get_configuration_url` to get the link if the user wants to add new connections.",
-      "",
-      "You have native Trello MCP configured (mcp__trello__*). Available tools:",
-      "- list_boards, get_board — browse boards",
-      "- get_lists — get lists on a board",
-      "- get_cards, get_card — get cards on a board or list",
-      "- get_labels — get labels on a board",
-      "- create_card, update_card, archive_card — manage cards",
-      "- add_comment — comment on cards",
-      "- create_list — create new lists",
-      "- add_checklist — add checklists with items to cards",
-      "- search — search across cards and boards",
-      "",
-      "## Browser Automation (Playwright MCP)",
-      "You have headless Chromium available via Playwright MCP (mcp__playwright__*).",
-      "Use this when WebFetch fails due to JavaScript-rendered content, or when you need to:",
-      "- Fill forms, click buttons, navigate multi-step flows",
-      "- Extract data from JS-heavy SPAs that return empty HTML to curl/fetch",
-      "- Take screenshots of web pages",
-      "- Generate PDFs of web pages",
-      "",
-      "**Decision guide — WebFetch vs Playwright:**",
-      "- Static content, simple HTML → WebFetch (faster, cheaper)",
-      "- JS-rendered, dynamic, interactive → Playwright MCP",
-      "",
-      "Key tools: playwright_navigate, playwright_click, playwright_fill,",
-      "playwright_screenshot, playwright_get_visible_text, playwright_evaluate,",
-      "playwright_save_as_pdf, playwright_select, playwright_hover",
-      "",
-      "Browser runs headless on a server. No login sessions persist between agent restarts.",
-      "For authenticated sites, use API approaches instead.",
-      "",
-      "When asked to integrate with a new service or add functionality, evaluate these options in order:",
-      "",
-      "### 1. MCP Server (preferred)",
-      "Search the web for `\"<service> MCP server\"`. MCP servers are SDK-native tool providers —",
-      "the best option when one exists. To add one, edit `/home/ubuntu/agent/.mcp.json`:",
-      "- stdio: `{ \"command\": \"npx\", \"args\": [\"-y\", \"@package/name\"], \"env\": { \"API_KEY\": \"...\" } }`",
-      "- HTTP: `{ \"type\": \"http\", \"url\": \"https://...\", \"headers\": { ... } }`",
-      "The SDK auto-loads `.mcp.json` from cwd. Tools become available on next query() call.",
-      "",
-      "### 2. Community Skill",
-      "Search for `\"<service> claude skill\"` on GitHub or SkillsMP. BUT check the auth method —",
-      "if it requires OAuth browser flow, it won't work (we're headless). Only install if it",
-      "supports API keys, tokens, or no auth. Install to `.claude/skills/<name>/`.",
-      "",
-      "### 3. Custom Skill",
-      "If no MCP server or compatible community skill exists, build one in `.claude/skills/<name>/`",
-      "with a `SKILL.md` (YAML frontmatter: name, description, tags) and supporting scripts.",
-      "Use existing skills listed in 'Available Skills' above as templates.",
-      "- Prefer Python for API integrations, Bash for system tasks",
-      "- New skills are auto-discovered immediately — no restart needed",
-      "",
-      "### Autonomous Skill Creation",
-      "When creating a custom skill, follow the detailed template in `.claude/skills/skill-generator/SKILL.md`.",
-      "Before creating, check `.claude/skills/skill-generator/LEARNINGS.md` for past lessons.",
-      "After creating or fixing a skill, append an entry to the learnings log.",
-      "",
-      "### 4. One-off Bash",
-      "For simple, non-recurring needs (convert an image, quick API call), just use Bash directly.",
-      "Don't over-engineer.",
-      "",
-      "### Constraints",
-      "- **Headless environment** — no browser, no interactive prompts, no OAuth consent screens",
-      "- **Auth that works:** API keys, app passwords, service accounts, tokens in env vars",
-      "- **Auth that DOESN'T work:** OAuth 2.0 browser consent, any interactive flow",
-      "- **Security:** never commit secrets to git. Store credentials in `/home/ubuntu/.claude-agent/` or env vars",
-      "- After adding an MCP server or skill that requires a restart, run self-deploy",
-      "",
-      "## Self-Deploy",
-      "You can modify your own source code and redeploy yourself.",
-      "Your source code is at /home/ubuntu/agent (TypeScript, compiled to dist/).",
-      "After making code changes, run: bash /home/ubuntu/agent/scripts/deploy-self.sh",
-      "This will build, install, and restart your systemd service.",
-      "IMPORTANT: The restart will terminate your current process. Warn the user that",
-      "you are about to restart and that they should wait a few seconds before messaging again.",
-      "Only self-deploy when explicitly asked to, or when the user has asked you to make",
-      "changes to your own code/config and expects them to take effect.",
-    ].join("\n");
+    return this.promptBuilder.buildExtendedPrompt(this.buildSkillsPrompt());
   }
 
   /** Build memory context section for injection into the system prompt. */
   private buildMemoryContext(userId?: number): string {
-    const parts: string[] = [];
-
-    // Always-include facts: personal + preference (identity context)
-    const coreContext = this.memory.getContext({
-      categories: ["personal", "preference"],
-    });
-
-    // Other facts sorted by recency
-    const otherContext = this.memory.getContext({
-      categories: ["work", "system", "general"],
-      maxFacts: 20,
-    });
-
-    const allContext = [coreContext, otherContext].filter(Boolean).join("\n");
-    if (allContext) {
-      parts.push(`## Currently Remembered Facts\n${allContext}`);
-    }
-
-    // Include last session summary if available
-    if (userId) {
-      const summary = this.memory.getLastSessionSummary(userId);
-      if (summary) {
-        parts.push(`## Previous Conversation Summary\n${summary}`);
-      }
-    }
-
-    return parts.join("\n\n");
+    return this.promptBuilder.buildMemoryContext(userId);
   }
 
   async run(
@@ -372,21 +147,12 @@ export class Agent {
     const isResumedSession = !!opts?.sessionId;
     const { claude } = this.config;
 
-    // Build system prompt with tiering
-    const systemParts = [this.buildCorePrompt()];
-
-    // Extended sections only on first message of session (not resumed)
-    if (!isResumedSession) {
-      systemParts.push(this.buildExtendedPrompt());
-    }
-
-    // Memory context is always included (but selectively filtered)
-    const memoryContext = this.buildMemoryContext(opts?.userId);
-    if (memoryContext) {
-      systemParts.push(memoryContext);
-    }
-
-    const systemPrompt = systemParts.filter(Boolean).join("\n");
+    const systemPrompt = this.promptBuilder.buildSystemPrompt({
+      resumedSession: isResumedSession,
+      userId: opts?.userId,
+      soulMd: this.soulMd,
+      runtimeSkillsSection: this.buildSkillsPrompt(),
+    });
 
     const options: Parameters<typeof query>[0]["options"] = {
       cwd: claude.workDir,

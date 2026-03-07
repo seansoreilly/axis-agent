@@ -4,10 +4,12 @@ import type { Agent, AgentResult } from "./agent.js";
 import type { Memory } from "./memory.js";
 import type { Scheduler } from "./scheduler.js";
 import { info, error as logError } from "./logger.js";
+import { TelegramMediaService } from "./telegram-media.js";
+import { TelegramProgressReporter } from "./telegram-progress.js";
+import { renderCommandHelp } from "./telegram-commands.js";
+import { metrics } from "./metrics.js";
 
 const MAX_MESSAGE_LENGTH = 4096;
-const ACK_DELAY_MS = 3000; // Send initial ack after 3s if still processing
-const STATUS_UPDATE_INTERVAL_MS = 60_000; // Update status every 60s
 const RESPONSE_TIME_HISTORY = 20; // Track last N response times for ETA
 
 // Telegram Bot API Location fields missing from @types/node-telegram-bot-api
@@ -62,6 +64,8 @@ export class TelegramIntegration {
   private processingUsers: Set<number> = new Set();
   private responseTimes: number[] = []; // Recent response durations in ms
   private userState: Map<number, UserState> = new Map();
+  private media: TelegramMediaService;
+  private progressReporter: TelegramProgressReporter;
 
   constructor(
     botToken: string,
@@ -76,6 +80,12 @@ export class TelegramIntegration {
     this.memory = memory;
     this.scheduler = scheduler;
     this.allowedUsers = new Set(allowedUsers);
+    this.media = new TelegramMediaService(this.bot, botToken);
+    this.progressReporter = new TelegramProgressReporter(
+      this.bot,
+      () => this.getEtaText(),
+      (startMs) => this.formatElapsed(startMs)
+    );
   }
 
   private getState(userId: number): UserState {
@@ -139,96 +149,9 @@ export class TelegramIntegration {
     return `${min}m ${sec}s`;
   }
 
-  /**
-   * Sends an initial ack after ACK_DELAY_MS, then edits it every 60s with status.
-   * Returns a cleanup function. The ack is deleted when cleanup is called.
-   */
-  private startProgressUpdates(
-    chatId: number,
-    startTime: number
-  ): { stop: () => Promise<void> } {
-    let ackMessageId: number | undefined;
-    let stopped = false;
-    let updateInterval: ReturnType<typeof setInterval> | undefined;
-
-    // Send initial ack after a short delay (skip if response comes fast)
-    const ackTimeout = setTimeout(async () => {
-      if (stopped) return;
-      try {
-        const eta = this.getEtaText();
-        const sent = await this.bot.sendMessage(
-          chatId,
-          `Working on it... ETA: ${eta}`
-        );
-        ackMessageId = sent.message_id;
-
-        // Start editing the message every 60s
-        updateInterval = setInterval(async () => {
-          if (stopped || !ackMessageId) return;
-          const elapsed = this.formatElapsed(startTime);
-          try {
-            await this.bot.editMessageText(
-              `Still working... (${elapsed} elapsed)`,
-              { chat_id: chatId, message_id: ackMessageId }
-            );
-          } catch {
-            // Edit can fail if message was already deleted
-          }
-        }, STATUS_UPDATE_INTERVAL_MS);
-      } catch {
-        // Non-critical — just skip the ack
-      }
-    }, ACK_DELAY_MS);
-
-    return {
-      stop: async () => {
-        stopped = true;
-        clearTimeout(ackTimeout);
-        if (updateInterval) clearInterval(updateInterval);
-        // Delete the progress message
-        if (ackMessageId) {
-          try {
-            await this.bot.deleteMessage(chatId, ackMessageId);
-          } catch {
-            // Already deleted or permissions issue — ignore
-          }
-        }
-      },
-    };
-  }
-
   private isAuthorized(userId: number): boolean {
     if (this.allowedUsers.size === 0) return false;
     return this.allowedUsers.has(userId);
-  }
-
-  private async downloadFile(fileId: string): Promise<string | null> {
-    try {
-      const file = await this.bot.getFile(fileId);
-      if (!file.file_path) return null;
-      const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
-      const response = await fetch(fileUrl);
-      return await response.text();
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logError("telegram", `Failed to download file: ${errMsg}`);
-      return null;
-    }
-  }
-
-  private async downloadFileBuffer(fileId: string): Promise<{ buffer: Buffer; path: string } | null> {
-    try {
-      const file = await this.bot.getFile(fileId);
-      if (!file.file_path) return null;
-      const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
-      const response = await fetch(fileUrl);
-      const buffer = Buffer.from(await response.arrayBuffer());
-      return { buffer, path: file.file_path };
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logError("telegram", `Failed to download file: ${errMsg}`);
-      return null;
-    }
   }
 
   private async handleMessage(msg: TelegramBot.Message): Promise<void> {
@@ -240,7 +163,7 @@ export class TelegramIntegration {
 
     // If a document is attached, download it and prepend its content
     if (msg.document) {
-      const content = await this.downloadFile(msg.document.file_id);
+      const content = await this.media.downloadText(msg.document.file_id);
       if (content) {
         const fileName = msg.document.file_name ?? "uploaded_file";
         text = `[File: ${fileName}]\n\`\`\`\n${content}\n\`\`\`\n\n${text}`.trim();
@@ -250,13 +173,10 @@ export class TelegramIntegration {
     // Handle photo messages — download largest version and describe as image context
     if (msg.photo && msg.photo.length > 0) {
       const largest = msg.photo[msg.photo.length - 1];
-      const downloaded = await this.downloadFileBuffer(largest.file_id);
+      const downloaded = await this.media.downloadBuffer(largest.file_id);
       if (downloaded) {
         const ext = downloaded.path.split(".").pop() ?? "jpg";
-        // Save temporarily so the agent can read it with the Read tool
-        const tmpPath = `/tmp/telegram_photo_${Date.now()}.${ext}`;
-        const { writeFileSync } = await import("node:fs");
-        writeFileSync(tmpPath, downloaded.buffer);
+        const tmpPath = this.media.saveTemp("telegram_photo", ext, downloaded.buffer);
         const state = this.getState(userId!);
         state.tempFiles.push(tmpPath);
         state.recentPhotos.push({ path: tmpPath, timestamp: Date.now() });
@@ -271,11 +191,9 @@ export class TelegramIntegration {
 
     // Handle voice messages — download and save for the agent to process
     if (msg.voice) {
-      const downloaded = await this.downloadFileBuffer(msg.voice.file_id);
+      const downloaded = await this.media.downloadBuffer(msg.voice.file_id);
       if (downloaded) {
-        const tmpPath = `/tmp/telegram_voice_${Date.now()}.ogg`;
-        const { writeFileSync } = await import("node:fs");
-        writeFileSync(tmpPath, downloaded.buffer);
+        const tmpPath = this.media.saveTemp("telegram_voice", "ogg", downloaded.buffer);
         const state = this.getState(userId!);
         state.tempFiles.push(tmpPath);
         text = `[Voice message: ${tmpPath}, duration: ${msg.voice.duration}s]\nThe user sent a voice message. Use the Bash tool to transcribe or process it.\n\n${text}`.trim();
@@ -322,6 +240,7 @@ export class TelegramIntegration {
     if (!userId || !text) return;
 
     if (!this.isAuthorized(userId)) {
+      metrics.increment("telegram.unauthorized");
       await this.bot.sendMessage(chatId, "Unauthorized.");
       return;
     }
@@ -353,6 +272,7 @@ export class TelegramIntegration {
     state.lastChatId = chatId;
 
     this.processingUsers.add(userId);
+    metrics.setGauge("telegram.processing_users", this.processingUsers.size);
     const startTime = Date.now();
     const abortController = new AbortController();
     state.abortController = abortController;
@@ -364,7 +284,7 @@ export class TelegramIntegration {
     await this.bot.sendChatAction(chatId, "typing");
 
     // Start progress updates (ack after 3s, status every 60s)
-    const progress = this.startProgressUpdates(chatId, startTime);
+    const progress = this.progressReporter.start(chatId, startTime);
 
     try {
       // In-memory session map is the single source of truth for resumption
@@ -400,6 +320,7 @@ export class TelegramIntegration {
       // Track cost
       state.totalCostUsd += result.totalCostUsd;
       state.requestCount++;
+      metrics.increment("telegram.requests.completed");
 
       await progress.stop();
       await this.sendResponse(chatId, result.text, result);
@@ -411,6 +332,7 @@ export class TelegramIntegration {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       logError("telegram", `Agent run failed for user ${userId}: ${errMsg}`);
+      metrics.increment("telegram.requests.failed");
       await progress.stop();
       await this.bot.sendMessage(
         chatId,
@@ -419,6 +341,7 @@ export class TelegramIntegration {
     } finally {
       clearInterval(typingInterval);
       this.processingUsers.delete(userId);
+      metrics.setGauge("telegram.processing_users", this.processingUsers.size);
       state.abortController = undefined;
 
       // Clean up temp files (photos, voice messages)
@@ -525,18 +448,7 @@ export class TelegramIntegration {
           chatId,
           "Claude Agent is ready. Send me any message and I will process it with Claude.\n\n" +
             "Commands:\n" +
-            "/new - Start fresh session\n" +
-            "/cancel - Cancel current request\n" +
-            "/retry - Re-run last prompt\n" +
-            "/model - Switch Claude model\n" +
-            "/cost - Show usage costs\n" +
-            "/schedule - Manage scheduled tasks\n" +
-            "/tasks - List scheduled tasks\n" +
-            "/remember - Store a fact\n" +
-            "/forget - Remove a fact\n" +
-            "/memories - List all facts\n" +
-            "/status - Show bot status\n" +
-            "/post - Create a Facebook post with recent photos"
+            renderCommandHelp()
         );
         break;
 
@@ -821,7 +733,7 @@ export class TelegramIntegration {
       default:
         await this.bot.sendMessage(
           chatId,
-          "Commands: /new /cancel /retry /model /cost /schedule /tasks /remember /forget /memories /status /post"
+          `Commands:\n${renderCommandHelp()}`
         );
     }
   }

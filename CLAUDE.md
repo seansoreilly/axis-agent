@@ -98,6 +98,7 @@ Configured in `.mcp.json` (auto-loaded by the SDK from cwd):
 - **Zapier** (`@anthropic-ai/mcp-server-zapier`) — Google Calendar, Gmail, Google Contacts via Zapier actions. Requires `ZAPIER_API_KEY`.
 - **Trello** (`src/trello-mcp-server.ts`) — custom native MCP server for Trello board/card/checklist management. Runs from `dist/trello-mcp-server.js` (must `npm run build` first). Requires `TRELLO_API_KEY`, `TRELLO_API_TOKEN`.
 - **Playwright** (`@playwright/mcp`) — headless Chromium browser automation (screenshots, form filling, navigation). Viewport: 1280x720. `PrivateDevices=false` required in systemd unit for `/dev/shm` access.
+- **Composio** (URL-based, `backend.composio.dev`) — unified tool router providing 1000+ integrations (Google Sheets, Slack, GitHub, etc.). Uses SSE/streamable HTTP transport. API key passed via `x-api-key` header in `.mcp.json` (URL-based servers can't read env vars). Requires `COMPOSIO_API_KEY`.
 
 ## OwnTracks Location Tracking
 
@@ -137,6 +138,7 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 | `env-secrets` (ZAPIER_API_KEY) | `/home/ubuntu/agent/.env` (via EnvironmentFile) |
 | `env-secrets` (TRELLO_API_KEY, TRELLO_API_TOKEN) | `/home/ubuntu/agent/.env` (via EnvironmentFile) |
 | `claude-oauth` | `/home/ubuntu/.claude/.credentials.json` (OAuth credentials) |
+| `env-secrets` (COMPOSIO_API_KEY) | `/home/ubuntu/agent/.mcp.json` (inline in headers, URL-based MCP) |
 
 **Workflows:**
 - **Sync secrets:** `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)

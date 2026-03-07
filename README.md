@@ -87,7 +87,7 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 ### Memory System
 - Structured facts with categories: personal, work, preference, system, general
 - Automatic category inference from key names
-- Migration from legacy string-based format on first load
+- SQLite-backed persistence with migration from legacy JSON stores on first load
 - Context injection sorted by recency, capped at 30 facts
 - Session records with cost tracking, turn counts, and summaries
 - Auto-generated session summaries (via Haiku) for sessions costing ≥$0.05, injected when resuming
@@ -106,6 +106,11 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 - **GitHub Actions** workflow runs every 30 minutes — checks instance state, SSH connectivity, and service health
 - **Self-heal script** runs on the instance via systemd timer — restarts the service if it becomes inactive
 - **Local health check** script verifies Tailscale, AWS instance state, and peer connectivity
+
+### Operations
+- Structured JSON logs for easier ingestion into log tooling
+- Durable SQLite-backed job queue for webhook and scheduler-triggered runs
+- Admin/debug HTTP endpoints: `/admin/status`, `/admin/jobs`, `/admin/events`, `/admin/metrics`
 
 ## Installation
 
@@ -280,12 +285,19 @@ src/
   config.ts             # Environment config loader
   agent.ts              # Wraps Claude Agent SDK query() calls
   auth.ts               # OAuth token refresh (proactive + periodic)
-  gateway.ts            # Fastify HTTP server (webhook + task management)
+  gateway.ts            # Fastify HTTP server (webhook + task management + admin endpoints)
   telegram.ts           # Telegram Bot API connector (commands, media, inline keyboards)
-  telegram.test.ts      # Tests (vitest)
+  telegram-commands.ts  # Telegram command definitions and registry
+  telegram-media.ts     # Media handling (photos, voice, documents)
+  telegram-progress.ts  # Typing indicators and ETA progress reporting
   memory.ts             # Structured memory store (categorized facts, session records)
+  persistence.ts        # SQLite-backed storage for jobs, facts, sessions, and tasks
   scheduler.ts          # Cron-based task scheduling
-  logger.ts             # Structured logging
+  jobs.ts               # Durable job queue (webhook and scheduler-triggered runs)
+  metrics.ts            # In-process counters and gauges for operational metrics
+  prompt-builder.ts     # Tiered system prompt construction (core + extended)
+  prompt-config.ts      # Prompt section definitions and defaults
+  logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
 scripts/
   sync-secrets.sh       # Fetch secrets from Bitwarden, push to server via SCP

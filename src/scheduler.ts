@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { exec } from "node:child_process";
-import { dirname, join } from "node:path";
 import cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import type { Agent } from "./agent.js";
 import { info, error as logError } from "./logger.js";
+import { SqliteStore } from "./persistence.js";
+import type { JobService } from "./jobs.js";
 
 /** Max time for a monitor check command to run (10 seconds). */
 const CHECK_COMMAND_TIMEOUT_MS = 10_000;
@@ -52,27 +52,25 @@ export class Scheduler {
   private tasks: Map<string, cron.ScheduledTask> = new Map();
   private taskDefs: Map<string, ScheduledTask> = new Map();
   private onResult?: TaskCallback;
-  private persistPath: string;
+  private store: SqliteStore;
   private running = false;
+  private jobs?: JobService;
 
-  constructor(agent: Agent, onResult?: TaskCallback, persistDir?: string) {
+  constructor(agent: Agent, onResult?: TaskCallback, persistDir?: string, jobs?: JobService) {
     this.agent = agent;
     this.onResult = onResult;
-    const dir = persistDir ?? "/home/ubuntu/.claude-agent/memory";
-    this.persistPath = join(dir, "tasks.json");
+    this.store = new SqliteStore(persistDir ?? "/home/ubuntu/.claude-agent/memory");
+    this.jobs = jobs;
     this.loadFromDisk();
   }
 
   private loadFromDisk(): void {
     try {
-      if (existsSync(this.persistPath)) {
-        const raw = readFileSync(this.persistPath, "utf-8");
-        const saved: ScheduledTask[] = JSON.parse(raw);
-        for (const task of saved) {
-          this.add(task);
-        }
-        info("scheduler", `Loaded ${saved.length} task(s) from disk`);
+      const saved = this.store.listTasks();
+      for (const task of saved) {
+        this.add(task);
       }
+      info("scheduler", `Loaded ${saved.length} task(s) from disk`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logError("scheduler", `Failed to load tasks from disk: ${msg}`);
@@ -81,12 +79,9 @@ export class Scheduler {
 
   private saveToDisk(): void {
     try {
-      const dir = dirname(this.persistPath);
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+      for (const task of this.taskDefs.values()) {
+        this.store.upsertTask(task);
       }
-      const tasks = [...this.taskDefs.values()];
-      writeFileSync(this.persistPath, JSON.stringify(tasks, null, 2));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logError("scheduler", `Failed to save tasks to disk: ${msg}`);
@@ -151,12 +146,24 @@ export class Scheduler {
               info("scheduler", `Running task: ${task.name} (${task.id})`);
             }
 
-            const result = await this.agent.run(prompt);
-            info(
-              "scheduler",
-              `Task ${task.id} completed in ${result.durationMs}ms`
-            );
-            this.onResult?.(task.id, result.text);
+            if (this.jobs) {
+              const job = this.jobs.enqueuePromptJob({
+                prompt,
+                source: "scheduler",
+                metadata: { taskId: task.id, taskName: task.name },
+              });
+              const completed = await this.jobs.waitForCompletion(job.id);
+              const text = completed.resultText ?? completed.errorText ?? "Task completed.";
+              info("scheduler", `Task ${task.id} completed via job ${job.id}`);
+              this.onResult?.(task.id, text);
+            } else {
+              const result = await this.agent.run(prompt);
+              info(
+                "scheduler",
+                `Task ${task.id} completed in ${result.durationMs}ms`
+              );
+              this.onResult?.(task.id, result.text);
+            }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             logError("scheduler", `Task ${task.id} failed: ${msg}`);
@@ -181,6 +188,7 @@ export class Scheduler {
     }
     const removed = this.taskDefs.delete(id);
     if (removed) {
+      this.store.deleteTask(id);
       this.saveToDisk();
     }
     return removed;

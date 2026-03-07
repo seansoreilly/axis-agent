@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runCheckCommand } from "./scheduler.js";
@@ -107,7 +107,7 @@ describe("Scheduler with monitor tasks", () => {
     expect(tasks[0].id).toBe("monitor-1");
   });
 
-  it("persists checkCommand to disk", async () => {
+  it("persists checkCommand in storage", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,10 +122,7 @@ describe("Scheduler with monitor tasks", () => {
       checkCommand: "cat /tmp/rss-new.txt",
     });
 
-    // Read persisted file
-    const saved = JSON.parse(
-      (await import("node:fs")).readFileSync(join(tmpDir, "tasks.json"), "utf-8")
-    );
+    const saved = scheduler.list();
     expect(saved[0].checkCommand).toBe("cat /tmp/rss-new.txt");
   });
 
