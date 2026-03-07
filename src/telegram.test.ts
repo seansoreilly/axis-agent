@@ -119,7 +119,7 @@ describe("TelegramIntegration", () => {
     expect(errorMsg).toBeTruthy();
   });
 
-  it("rejects concurrent messages from same user", async () => {
+  it("queues concurrent messages from same user instead of dropping", async () => {
     let resolveFirst!: (v: AgentResult) => void;
     const firstPromise = new Promise<AgentResult>((resolve) => {
       resolveFirst = resolve;
@@ -134,17 +134,17 @@ describe("TelegramIntegration", () => {
     handler(makeMsg("first"));
     await flush();
 
-    // Send second message while first is processing
+    // Send second message while first is processing — should be queued
     handler(makeMsg("second"));
     await flush();
 
-    // User should be told to wait
-    const waitMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
-      String(c[1]).includes("Still working")
+    // User should be told it's queued
+    const queueMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("Queued")
     );
-    expect(waitMsg).toBeTruthy();
+    expect(queueMsg).toBeTruthy();
 
-    // Agent.run should only have been called once
+    // Agent.run should only have been called once so far
     expect(agent.run).toHaveBeenCalledTimes(1);
 
     // Clean up — resolve first
@@ -727,5 +727,166 @@ describe("TelegramIntegration", () => {
     const prompt = agent.run.mock.calls[0][0] as string;
     expect(prompt).toContain("Replying to:");
     expect(prompt).toContain("previous bot response");
+  });
+
+  it("queues messages sent while agent is busy", async () => {
+    let resolveFirst!: (v: AgentResult) => void;
+    const firstPromise = new Promise<AgentResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const agent = makeAgent();
+    agent.run.mockReturnValueOnce(firstPromise);
+
+    const { handler, botInstance } = await createBot(agent);
+
+    // Start first message (will block on the unresolved promise)
+    handler(makeMsg("first"));
+    await flush();
+
+    // Send second message while first is processing — should be queued
+    handler(makeMsg("second"));
+    await flush();
+
+    const queueMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("Queued")
+    );
+    expect(queueMsg).toBeTruthy();
+
+    // Resolve first request
+    resolveFirst({
+      text: "done with first",
+      sessionId: "sess-1",
+      durationMs: 100,
+      totalCostUsd: 0.01,
+      isError: false,
+    });
+    await flush();
+
+    // Agent should have been called twice — first message and then the queued one
+    expect(agent.run).toHaveBeenCalledTimes(2);
+    expect(agent.run.mock.calls[1][0]).toBe("second");
+  });
+
+  it("batches multiple queued messages into a single prompt", async () => {
+    let resolveFirst!: (v: AgentResult) => void;
+    const firstPromise = new Promise<AgentResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const agent = makeAgent();
+    agent.run.mockReturnValueOnce(firstPromise);
+
+    const { handler } = await createBot(agent);
+
+    // Start first message
+    handler(makeMsg("first"));
+    await flush();
+
+    // Queue two more messages
+    handler(makeMsg("second"));
+    await flush();
+    handler(makeMsg("third"));
+    await flush();
+
+    // Resolve first request
+    resolveFirst({
+      text: "done",
+      sessionId: "sess-1",
+      durationMs: 100,
+      totalCostUsd: 0.01,
+      isError: false,
+    });
+    await flush();
+
+    // Agent called twice: first message, then batched second+third
+    expect(agent.run).toHaveBeenCalledTimes(2);
+    const batchedPrompt = agent.run.mock.calls[1][0] as string;
+    expect(batchedPrompt).toContain("[Message 1]: second");
+    expect(batchedPrompt).toContain("[Message 2]: third");
+  });
+
+  it("/cancel clears queued messages", async () => {
+    let resolveFirst!: (v: AgentResult) => void;
+    const firstPromise = new Promise<AgentResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const agent = makeAgent();
+    agent.run.mockReturnValueOnce(firstPromise);
+
+    const { handler, botInstance } = await createBot(agent);
+
+    // Start first message
+    handler(makeMsg("first"));
+    await flush();
+
+    // Queue a message
+    handler(makeMsg("second"));
+    await flush();
+
+    // Cancel — should clear the queue too
+    handler(makeMsg("/cancel"));
+    await flush();
+
+    const cancelMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("1 queued message")
+    );
+    expect(cancelMsg).toBeTruthy();
+
+    // Resolve first request
+    resolveFirst({
+      text: "cancelled",
+      sessionId: "sess-1",
+      durationMs: 100,
+      totalCostUsd: 0,
+      isError: true,
+    });
+    await flush();
+
+    // Agent should only have been called once (queued message was discarded)
+    expect(agent.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("/new clears queued messages", async () => {
+    let resolveFirst!: (v: AgentResult) => void;
+    const firstPromise = new Promise<AgentResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const agent = makeAgent();
+    agent.run.mockReturnValueOnce(firstPromise);
+
+    const { handler, botInstance } = await createBot(agent);
+
+    // Start first message
+    handler(makeMsg("first"));
+    await flush();
+
+    // Queue a message
+    handler(makeMsg("second"));
+    await flush();
+
+    // /new — should clear session and queue
+    handler(makeMsg("/new"));
+    await flush();
+
+    const newMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("1 queued message") && String(c[1]).includes("discarded")
+    );
+    expect(newMsg).toBeTruthy();
+
+    // Resolve first request
+    resolveFirst({
+      text: "done",
+      sessionId: "sess-1",
+      durationMs: 100,
+      totalCostUsd: 0.01,
+      isError: false,
+    });
+    await flush();
+
+    // Agent should only have been called once (queued message was discarded)
+    expect(agent.run).toHaveBeenCalledTimes(1);
   });
 });

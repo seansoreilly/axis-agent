@@ -16,7 +16,10 @@ An always-on AI agent powered by the [Claude Agent SDK](https://platform.claude.
 | **LLM lock-in** | Claude only | Multi-provider (Claude, GPT, DeepSeek) |
 | **Messaging** | Telegram + HTTP webhook | 10+ platforms (WhatsApp, Slack, Discord, etc.) |
 
-The key advantage: **if you're already paying for a Claude Max or Pro plan, this agent uses those same tokens at no additional cost.** OpenClaw requires a separate API key with per-token billing.
+The key advantages:
+
+1. **Zero marginal cost** — if you're already paying for a Claude Max or Pro plan, this agent uses those same tokens at no additional cost. OpenClaw requires a separate API key with per-token billing.
+2. **Continuously upgraded engine** — because the agent delegates to Claude Code under the hood, every improvement Anthropic ships to Claude Code (new models, new tools, better sandboxing, performance gains) is inherited automatically. There's no fork to maintain or upstream to track — you always run on the latest Claude Code.
 
 > **Note:** Anthropic's Max plan is licensed for development and personal use only, not production workloads. If you're deploying for production, use the Anthropic API with per-token billing instead.
 

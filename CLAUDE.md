@@ -34,7 +34,7 @@ Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-a
 - `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Routes: `GET /health`, `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `POST /owntracks` (location ingestion, enabled when `OWNTRACKS_TOKEN` is set), `POST /twilio/inbound-sms` (forwards incoming SMS to Telegram).
 - `TrelloMcpServer` (`src/trello-mcp-server.ts`) — custom MCP server exposing Trello REST API as tools (list boards, create/update/archive cards, manage checklists, comments). Runs as stdio MCP server configured in `.mcp.json`. Requires `TRELLO_API_KEY` and `TRELLO_API_TOKEN` env vars.
 - `Memory` (`src/memory.ts`) — JSON file store at `~/.claude-agent/memory/store.json`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
-- `Logger` (`src/logger.ts`) — shared `info()` and `error()` logging functions used across all modules.
+- `Logger` (`src/logger.ts`) — minimal structured logger writing to stdout/stderr with `[claude-agent] [component]` prefix. Used by all components via `info()` and `error()` functions.
 - `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by SDK). No `ANTHROPIC_API_KEY` needed.
 
 ## ESM Module System
@@ -96,7 +96,7 @@ Key constraint: the agent runs headless under systemd, so only API keys / app pa
 Configured in `.mcp.json` (auto-loaded by the SDK from cwd):
 
 - **Zapier** (`@anthropic-ai/mcp-server-zapier`) — Google Calendar, Gmail, Google Contacts via Zapier actions. Requires `ZAPIER_API_KEY`.
-- **Trello** (`src/trello-mcp-server.ts`) — custom native MCP server for Trello board/card/checklist management. Runs from `dist/trello-mcp-server.js` (must `npm run build` first). Requires `TRELLO_API_KEY`, `TRELLO_API_TOKEN`.
+- **Trello** (`src/trello-mcp-server.ts`) — custom native MCP server for Trello board/card/checklist management. Runs from `dist/trello-mcp-server.js` (must `npm run build` first). Requires `TRELLO_API_KEY`, `TRELLO_API_TOKEN`. Uses `zod` for input validation (available via `@modelcontextprotocol/sdk`, not a direct dependency).
 - **Playwright** (`@playwright/mcp`) — headless Chromium browser automation (screenshots, form filling, navigation). Viewport: 1280x720. `PrivateDevices=false` required in systemd unit for `/dev/shm` access.
 - **Composio** (URL-based, `backend.composio.dev`) — unified tool router providing 1000+ integrations (Google Sheets, Slack, GitHub, etc.). Uses SSE/streamable HTTP transport. API key passed via `x-api-key` header in `.mcp.json` (URL-based servers can't read env vars). Requires `COMPOSIO_API_KEY`.
 
@@ -169,7 +169,7 @@ The `--generate-notes` flag auto-generates release notes from commit messages si
 
 ## Security Model
 
-- Gateway is localhost-only (Tailscale provides network access control)
+- Gateway binds to `0.0.0.0` (all interfaces) — Tailscale VPN + cloud firewall provide network access control
 - Telegram auth is fail-closed: empty `allowedUsers` = crash at startup
 - Error messages to users are generic; details logged server-side only
 - Scheduler limits: max 20 tasks, minimum 5-minute interval
