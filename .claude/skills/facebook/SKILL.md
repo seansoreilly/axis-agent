@@ -63,3 +63,14 @@ python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_text.py --messag
 - `--message` (required): Post text content
 
 **Output:** JSON with fields: `success` (boolean), `post_id`, `url`, or `error`
+
+## Dry-run validation
+
+All posting scripts support `--dry-run` to validate credentials and inputs without calling the API:
+
+```bash
+python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_text.py --message 'test' --dry-run
+python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_photos.py --message 'test' --photos /tmp/photo.jpg --dry-run
+```
+
+Returns `{"success": true, "dry_run": true, ...}` with what would have been posted. Used by post-deploy health checks.

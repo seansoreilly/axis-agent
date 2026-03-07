@@ -107,8 +107,14 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 
 ### Health Monitoring
 - **GitHub Actions** workflow runs every 30 minutes — checks instance state, SSH connectivity, and service health
+- **Post-deploy regression checks** — after every deploy, verifies service health, gateway endpoint, Telegram Bot API connectivity, polling mode, and skill dry-run validation
 - **Self-heal script** runs on the instance via systemd timer — restarts the service if it becomes inactive
 - **Local health check** script verifies Tailscale, AWS instance state, and peer connectivity
+
+### Skill Testing
+- All skill scripts with side effects support `--dry-run` — validates credentials and inputs without calling external APIs
+- Post-deploy checks run `--dry-run` on every skill (facebook, twilio, gmail) to verify scripts are functional after deployment
+- Credential errors are reported as warnings (expected on fresh instances), while script errors are failures
 
 ### Operations
 - Structured JSON logs for easier ingestion into log tooling

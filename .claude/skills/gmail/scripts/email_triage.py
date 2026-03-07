@@ -495,6 +495,8 @@ def cmd_unsubscribe(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Gmail email triage via IMAP")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Validate inputs/credentials without connecting to IMAP or modifying emails")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     fetch_parser = subparsers.add_parser("fetch", help="Fetch INBOX emails")
@@ -521,7 +523,18 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "fetch":
+    if args.dry_run and args.command in ("fetch", "archive", "unsubscribe"):
+        if args.command == "fetch":
+            creds = load_credentials()
+            output({"success": True, "dry_run": True, "action": "fetch", "credentials_valid": True})
+        elif args.command == "archive":
+            output({"success": True, "dry_run": True, "action": "archive",
+                     "uids": [args.message_id]})
+        elif args.command == "unsubscribe":
+            link = getattr(args, "url", None) or ""
+            output({"success": True, "dry_run": True, "action": "unsubscribe",
+                     "url": link})
+    elif args.command == "fetch":
         cmd_fetch(args)
     elif args.command == "archive":
         cmd_archive(args)

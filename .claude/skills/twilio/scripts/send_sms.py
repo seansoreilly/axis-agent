@@ -54,12 +54,29 @@ def main():
     parser.add_argument("--to", required=True, help="Recipient E.164 phone number")
     parser.add_argument("--body", required=True, help="SMS message body (max 1600 chars)")
     parser.add_argument("--from", dest="from_number", help="Sender phone number (overrides default)")
+    parser.add_argument("--dry-run", action="store_true", help="Validate inputs without calling the Twilio API")
     args = parser.parse_args()
 
     if len(args.body) > 1600:
         fail("Message body exceeds 1600 character limit.")
 
-    result = send_sms(args.to, args.body, args.from_number)
+    if args.dry_run:
+        account_sid, auth_user, _, _, default_from = load_credentials()
+        if not account_sid or not auth_user:
+            fail("No Twilio credentials found. Set env vars or create credentials file.")
+        sender = args.from_number or default_from
+        if not sender:
+            fail("No --from number and no default from_number in credentials.")
+        result = {
+            "success": True,
+            "dry_run": True,
+            "to": args.to,
+            "from": sender,
+            "body_length": len(args.body),
+        }
+    else:
+        result = send_sms(args.to, args.body, args.from_number)
+
     sys.stdout.write(json.dumps(result, indent=2) + "\n")
 
 

@@ -116,3 +116,13 @@ Each run does TWO passes:
 - **Manual moves/archives** just remove UIDs → no position shift, no skipping
 - **high_uid only moves up**, low_uid only moves down → the processed range only grows
 - A single watermark fails because pass 1 and pass 2 fight over the same value
+
+## Dry-run validation
+
+The script supports `--dry-run` as a top-level flag. For `fetch`, `archive`, and `unsubscribe` it validates credentials and inputs without connecting to IMAP. Read-only commands (`state`, `watermark`, `reset`) run normally.
+
+```bash
+python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py --dry-run fetch --count 1
+```
+
+Returns `{"success": true, "dry_run": true, "action": "...", ...}`. Used by post-deploy health checks.

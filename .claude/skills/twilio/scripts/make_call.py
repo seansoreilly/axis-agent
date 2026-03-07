@@ -73,9 +73,27 @@ def main():
     parser.add_argument("--message", required=True, help="Text-to-speech message to read when answered")
     parser.add_argument("--from", dest="from_number", help="Caller ID number (overrides default)")
     parser.add_argument("--voice", default=DEFAULT_VOICE, help=f"TTS voice (default: {DEFAULT_VOICE})")
+    parser.add_argument("--dry-run", action="store_true", help="Validate inputs without calling the Twilio API")
     args = parser.parse_args()
 
-    result = make_call(args.to, args.message, args.from_number, args.voice)
+    if args.dry_run:
+        account_sid, auth_user, _, _, default_from = load_credentials()
+        if not account_sid or not auth_user:
+            fail("No Twilio credentials found. Set env vars or create credentials file.")
+        caller = args.from_number or default_from
+        if not caller:
+            fail("No --from number and no default from_number in credentials.")
+        twiml = make_twiml(args.message, args.voice)
+        result = {
+            "success": True,
+            "dry_run": True,
+            "to": args.to,
+            "from": caller,
+            "twiml_length": len(twiml),
+        }
+    else:
+        result = make_call(args.to, args.message, args.from_number, args.voice)
+
     sys.stdout.write(json.dumps(result, indent=2) + "\n")
 
 

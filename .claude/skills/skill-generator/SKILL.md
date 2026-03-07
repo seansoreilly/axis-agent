@@ -118,6 +118,7 @@ import { parseArgs } from "node:util";
 - Load credentials from `/home/ubuntu/.claude-agent/` or env vars — never hardcode
 - Use a `_common.py` for shared credential loading if multiple scripts need the same creds
 - Keep scripts self-contained (minimal dependencies)
+- **All scripts with side effects MUST support `--dry-run`** — validates credentials and inputs without calling external APIs. Returns `{"success": true, "dry_run": true, ...}`. This is used by post-deploy health checks to verify skills are functional.
 
 ### 5. Validate
 
@@ -129,6 +130,7 @@ Run through this checklist before considering the skill complete:
 - [ ] Credentials path documented and not hardcoded in scripts
 - [ ] No secrets committed to skill files
 - [ ] SKILL.md examples match actual script arguments
+- [ ] Scripts with side effects support `--dry-run` (returns `{"success": true, "dry_run": true, ...}`)
 - [ ] Tested with a real API call (or dry-run if destructive)
 
 ### 6. Test

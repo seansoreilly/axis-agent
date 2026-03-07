@@ -211,6 +211,7 @@ def main():
     parser.add_argument(
         "--photos", required=True, nargs="+", metavar="FILE", help="Photo file paths"
     )
+    parser.add_argument("--dry-run", action="store_true", help="Validate without posting")
     args = parser.parse_args()
 
     # Validate photo files exist before hitting the API
@@ -232,6 +233,20 @@ def main():
             )
         )
         sys.exit(1)
+
+    if args.dry_run:
+        print(
+            json.dumps(
+                {
+                    "success": True,
+                    "dry_run": True,
+                    "page_id": page_id,
+                    "photo_count": len(args.photos),
+                    "photos": args.photos,
+                }
+            )
+        )
+        sys.exit(0)
 
     try:
         photo_ids = []

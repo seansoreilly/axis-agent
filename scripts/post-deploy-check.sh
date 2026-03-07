@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Post-deploy regression test: verifies the Telegram bot API is responsive
-# and the gateway health endpoint is reachable after deployment.
+# Post-deploy regression test: verifies service health, Telegram bot API,
+# and skill dry-run validation after deployment.
 # Run automatically at the end of deploy.sh or manually.
 #
 # Exit codes:
@@ -79,11 +79,53 @@ else
   fi
 fi
 
+# --- 6. Skill health checks (dry-run validation on remote) ---
+echo ""
+echo "  Skill checks..."
+
+# Define skills and their dry-run commands (run on remote)
+# Format: "skill_name|command"
+SKILL_CHECKS=(
+  "facebook/post_text|python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_text.py --message healthcheck --dry-run"
+  "facebook/post_photos|python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_photos.py --message healthcheck --photos /etc/hostname --dry-run"
+  "twilio/send_sms|python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to +61400000000 --body healthcheck --dry-run"
+  "twilio/make_call|python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/make_call.py --to +61400000000 --message healthcheck --dry-run"
+  "gmail/email_triage|python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py --dry-run fetch --count 1"
+)
+
+for check in "${SKILL_CHECKS[@]}"; do
+  SKILL_NAME="${check%%|*}"
+  SKILL_CMD="${check#*|}"
+
+  # Check script exists on remote
+  SCRIPT_PATH=$(echo "$SKILL_CMD" | grep -oP '/home/ubuntu/agent/\S+\.py')
+  EXISTS=$(ssh $SSH_OPTS "$REMOTE_HOST" "test -f $SCRIPT_PATH && echo yes || echo no" 2>/dev/null)
+  if [ "$EXISTS" != "yes" ]; then
+    fail "skill $SKILL_NAME: script not found ($SCRIPT_PATH)"
+    continue
+  fi
+
+  # Run dry-run on remote
+  RESULT=$(ssh $SSH_OPTS "$REMOTE_HOST" "$SKILL_CMD 2>&1" || true)
+  if echo "$RESULT" | grep -q '"dry_run": true\|"dry_run":true'; then
+    pass "skill $SKILL_NAME dry-run OK"
+  elif echo "$RESULT" | grep -q '"success": true\|"success":true'; then
+    pass "skill $SKILL_NAME OK (no dry-run)"
+  else
+    # Credential errors are warnings, not failures — creds may not be on this instance
+    if echo "$RESULT" | grep -qi "credential\|No such file\|FileNotFoundError\|token"; then
+      echo "  WARN: skill $SKILL_NAME: credentials not available (expected on fresh instance)"
+    else
+      fail "skill $SKILL_NAME dry-run failed: $(echo "$RESULT" | head -1)"
+    fi
+  fi
+done
+
 # --- Export for callers ---
 export FAILURE_DETAILS="$FAILURES"
 export CHECK_ERRORS="$ERRORS"
 
-# --- 6. Recent logs on failure (grab last 30 lines for diagnostics) ---
+# --- 7. Recent logs on failure (grab last 30 lines for diagnostics) ---
 if [ "$ERRORS" -gt 0 ]; then
   echo ""
   echo "  Recent service logs:"

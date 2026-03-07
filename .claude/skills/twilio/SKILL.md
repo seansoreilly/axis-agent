@@ -59,3 +59,4 @@ python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/list_numbers.py
 - **SMS:** The AU number does NOT support SMS — use the US number for all SMS
 - **Voice:** Use the AU number for calls to Australian numbers (local caller ID)
 - **E.164 format:** Always include country code with + prefix (e.g. +61412345678, not 0412345678)
+- **Dry-run:** All scripts support `--dry-run` to validate credentials and inputs without calling the API. Returns `{"success": true, "dry_run": true, ...}`. Used by post-deploy health checks.

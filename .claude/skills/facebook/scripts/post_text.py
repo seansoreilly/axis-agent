@@ -115,6 +115,7 @@ def main():
         description="Post a text update to a Facebook Page"
     )
     parser.add_argument("--message", required=True, help="Post text")
+    parser.add_argument("--dry-run", action="store_true", help="Validate without posting")
     args = parser.parse_args()
 
     page_id, token = load_credentials()
@@ -130,6 +131,19 @@ def main():
             )
         )
         sys.exit(1)
+
+    if args.dry_run:
+        print(
+            json.dumps(
+                {
+                    "success": True,
+                    "dry_run": True,
+                    "page_id": page_id,
+                    "message_preview": args.message[:100],
+                }
+            )
+        )
+        sys.exit(0)
 
     try:
         post_id_full = create_text_post(page_id, token, args.message)
