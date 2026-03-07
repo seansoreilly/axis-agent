@@ -8,6 +8,7 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/agent
 EnvironmentFile=/home/ubuntu/agent/.env
 Environment=TZ=Australia/Melbourne
+Environment=CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=30

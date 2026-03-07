@@ -7,12 +7,21 @@ import { error as logError, info } from "./logger.js";
 import { ensureValidToken } from "./auth.js";
 import { PromptBuilder } from "./prompt-builder.js";
 
+export interface RateLimitInfo {
+  status: "allowed" | "allowed_warning" | "rejected";
+  utilization?: number;
+  resetsAt?: number;
+  rateLimitType?: string;
+  isUsingOverage?: boolean;
+}
+
 export interface AgentResult {
   text: string;
   sessionId: string;
   durationMs: number;
   totalCostUsd: number;
   isError: boolean;
+  rateLimit?: RateLimitInfo;
 }
 
 /** Cost threshold (USD) above which we generate a conversation summary. */
@@ -199,6 +208,7 @@ export class Agent {
     let durationMs = 0;
     let totalCostUsd = 0;
     let isError = false;
+    let rateLimit: RateLimitInfo | undefined;
 
     // Pre-flight: ensure OAuth token is valid before spawning SDK
     await ensureValidToken();
@@ -245,6 +255,20 @@ export class Agent {
             }
           }
         }
+
+        if (message.type === "rate_limit_event") {
+          const rl = message.rate_limit_info;
+          rateLimit = {
+            status: rl.status,
+            utilization: rl.utilization,
+            resetsAt: rl.resetsAt,
+            rateLimitType: rl.rateLimitType,
+            isUsingOverage: rl.isUsingOverage,
+          };
+          if (rl.status !== "allowed") {
+            info("agent", `Rate limit ${rl.status}: ${rl.rateLimitType} at ${Math.round((rl.utilization ?? 0) * 100)}% utilization`);
+          }
+        }
       }
     } catch (error) {
       isError = true;
@@ -263,6 +287,7 @@ export class Agent {
       durationMs,
       totalCostUsd,
       isError,
+      rateLimit,
     };
   }
 

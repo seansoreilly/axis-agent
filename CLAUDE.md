@@ -28,14 +28,22 @@ Always-on AI agent powered by the Claude Code Agent SDK (`@anthropic-ai/claude-a
 **Entrypoint flow** (`src/index.ts`): loads config → creates Memory, Agent, Scheduler, TelegramIntegration → starts Telegram polling + Fastify HTTP gateway (with inbound SMS handler) → registers graceful shutdown handlers.
 
 **Key components:**
-- `Agent` (`src/agent.ts`) — wraps SDK `query()`, returning `Promise<AgentResult>`. Builds a tiered system prompt: core prompt (always included) + extended prompt (injected on first message only, not on resumed sessions). Loads `SOUL.md` personality file if present (checks cwd and parent dir). Supports session resumption (`options.resume`), per-call model override, and `AbortSignal` for cancellation. Memory context splits facts into core (personal/preference, always included) vs other categories (capped at 20).
-- `TelegramIntegration` (`src/telegram.ts`) — polling-mode bot. Handles commands (`/new`, `/cancel`, `/retry`, `/model`, `/cost`, `/schedule`, `/tasks`, `/remember`, `/forget`, `/memories`, `/status`, `/post`), inline keyboard callbacks, photo/voice/document uploads, reply context, and per-user state (model override, cost tracking, abort controller, recent photos). Constructor takes optional `Scheduler` as 5th param.
+- `Agent` (`src/agent.ts`) — wraps SDK `query()`, returning `Promise<AgentResult>`. Delegates prompt construction to `PromptBuilder`. Loads `SOUL.md` personality file if present (checks cwd and parent dir). Supports session resumption (`options.resume`), per-call model override, and `AbortSignal` for cancellation.
+- `PromptBuilder` (`src/prompt-builder.ts`) — builds tiered system prompt: core prompt (always included) + extended prompt (injected on first message only, not on resumed sessions). Memory context splits facts into core (personal/preference, always included) vs other categories (capped at 20). Prompt sections defined in `PromptConfig` (`src/prompt-config.ts`).
+- `TelegramIntegration` (`src/telegram.ts`) — polling-mode bot. Handles commands (`/new`, `/cancel`, `/retry`, `/model`, `/cost`, `/schedule`, `/tasks`, `/remember`, `/forget`, `/memories`, `/status`, `/post`), inline keyboard callbacks, photo/voice/document uploads, reply context, and per-user state (model override, cost tracking, abort controller, recent photos). Constructor takes optional `Scheduler` as 5th param. Delegates to extracted modules:
+  - `TelegramMediaService` (`src/telegram-media.ts`) — file download, photo handling
+  - `TelegramProgressReporter` (`src/telegram-progress.ts`) — delayed ack messages + periodic status updates
+  - `TELEGRAM_COMMANDS` (`src/telegram-commands.ts`) — command registry with names/descriptions
 - `Scheduler` (`src/scheduler.ts`) — cron-based task runner via `node-cron` with Australia/Melbourne timezone. Max 20 tasks, minimum 5-minute interval. Persists tasks to `<memoryDir>/tasks.json` and restores on startup. Supports monitor-style tasks via optional `checkCommand` field — a shell command runs first, and the agent only runs if it produces non-empty output. Results delivered via callback (wired to Telegram notifications in index.ts).
 - `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Routes: `GET /health`, `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `POST /owntracks` (location ingestion, enabled when `OWNTRACKS_TOKEN` is set), `POST /twilio/inbound-sms` (forwards incoming SMS to Telegram).
+- `JobService` (`src/jobs.ts`) — async job queue for webhook/scheduler prompts. Enqueues prompt jobs, runs them via the Agent, supports retries (`maxAttempts`). Backed by `SqliteStore`.
+- `SqliteStore` (`src/persistence.ts`) — SQLite-backed persistence using `node:sqlite` (`DatabaseSync`). Stores memory facts, sessions, scheduled tasks, and job records. This is a Node.js 22+ built-in — no external SQLite dependency needed.
+- `MetricsRegistry` (`src/metrics.ts`) — in-memory counters and gauges for operational metrics.
+- `Auth` (`src/auth.ts`) — OAuth token refresh for Claude credentials (`~/.claude/.credentials.json`). Proactively refreshes tokens 10 minutes before expiry.
 - `TrelloMcpServer` (`src/trello-mcp-server.ts`) — custom MCP server exposing Trello REST API as tools (list boards, create/update/archive cards, manage checklists, comments). Runs as stdio MCP server configured in `.mcp.json`. Requires `TRELLO_API_KEY` and `TRELLO_API_TOKEN` env vars.
 - `Memory` (`src/memory.ts`) — JSON file store at `~/.claude-agent/memory/store.json`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
 - `Logger` (`src/logger.ts`) — minimal structured logger writing to stdout/stderr with `[claude-agent] [component]` prefix. Used by all components via `info()` and `error()` functions.
-- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by SDK). No `ANTHROPIC_API_KEY` needed.
+- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by `Auth` module). No `ANTHROPIC_API_KEY` needed.
 
 ## ESM Module System
 
@@ -51,7 +59,7 @@ This project uses `"type": "module"` — all imports must use `.js` extensions (
 
 ## Testing
 
-Tests use vitest with ESM module mocking. Test files: `telegram.test.ts`, `agent.test.ts`, `scheduler.test.ts`. Key patterns:
+Tests use vitest with ESM module mocking. Test files: `telegram.test.ts`, `agent.test.ts`, `scheduler.test.ts`, `prompt-builder.test.ts`, `memory.test.ts`, `jobs.test.ts`, `gateway.test.ts`. Key patterns:
 - `vi.mock("node-telegram-bot-api")` with a shared `mockBotInstance` variable (ESM doesn't support `mock.instances`)
 - Fire-and-forget handlers need `flush()` helper: `const flush = () => new Promise(r => setTimeout(r, 10))`
 - Mock Memory must include `getLastSession: vi.fn().mockReturnValue(undefined)` or session persistence code will fail

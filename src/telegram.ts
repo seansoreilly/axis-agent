@@ -935,7 +935,28 @@ export class TelegramIntegration {
       const dur = result.durationMs < 60000
         ? `${Math.round(result.durationMs / 1000)}s`
         : `${Math.round(result.durationMs / 60000)}m`;
-      footer = `\n\n_${dur} | $${result.totalCostUsd.toFixed(4)}_`;
+      let rateLimitNote = "";
+      if (result.rateLimit) {
+        const rl = result.rateLimit;
+        if (rl.status === "allowed_warning") {
+          const pct = Math.round((rl.utilization ?? 0) * 100);
+          rateLimitNote = ` | ⚠️ ${pct}% usage`;
+          if (rl.resetsAt) {
+            const mins = Math.max(1, Math.round((rl.resetsAt - Date.now() / 1000) / 60));
+            rateLimitNote += ` (resets ${mins}m)`;
+          }
+        } else if (rl.status === "rejected") {
+          rateLimitNote = " | 🚫 rate limited";
+          if (rl.resetsAt) {
+            const mins = Math.max(1, Math.round((rl.resetsAt - Date.now() / 1000) / 60));
+            rateLimitNote += ` (resets ${mins}m)`;
+          }
+        }
+        if (rl.isUsingOverage) {
+          rateLimitNote += " | 💸 overage";
+        }
+      }
+      footer = `\n\n_${dur} | $${result.totalCostUsd.toFixed(4)}${rateLimitNote}_`;
     }
 
     const fullText = text + footer;
