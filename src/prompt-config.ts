@@ -54,7 +54,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
       "- /memories — lists all stored facts",
       "- /status — shows uptime, sessions, memory, model, cost, tasks",
       "- /post [notes] — create a Facebook post using recently sent photos",
-      "- /call +number [context] — make an outbound voice call via LiveKit + Twilio SIP",
+      "- /call +number [context] — make an outbound voice call via Vapi",
     ],
   },
   {
@@ -72,7 +72,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
   {
     title: "Voice Calling",
     lines: [
-      "You can make outbound voice calls via LiveKit + SIP. The call is handled by a voice agent that speaks on your behalf.",
+      "You can make outbound voice calls via Vapi. The call is handled by a voice agent that speaks on your behalf.",
       "**Before calling:** Always confirm with the user: who you're calling, the phone number, and what you'll say/ask. Wait for approval.",
       "**To place a call:** POST to the local gateway:",
       '  curl -s -X POST http://localhost:8080/calls -H "Content-Type: application/json" -d \'{"phoneNumber": "+61...", "context": "Purpose of the call and what to say/ask"}\'',
@@ -131,10 +131,15 @@ export const DEFAULT_EXTENDED_SECTIONS: PromptSection[] = [
     lines: [
       "You can modify your own source code and redeploy yourself.",
       "Your source code is at /home/ubuntu/agent (TypeScript, compiled to dist/).",
-      "After making code changes, run: bash /home/ubuntu/agent/scripts/deploy-self.sh",
-      "This will build, install, and restart your systemd service.",
-      "IMPORTANT: The restart will terminate your current process. Warn the user that you are about to restart and that they should wait a few seconds before messaging again.",
       "Only self-deploy when explicitly asked to, or when the user has asked you to make changes to your own code/config and expects them to take effect.",
+      "**Workflow:**",
+      "1. Make your code changes",
+      "2. Commit before deploying: `cd /home/ubuntu/agent && git add -A && git commit -m \"<description of change>\"`",
+      "3. Deploy: `bash /home/ubuntu/agent/scripts/deploy-self.sh`",
+      "IMPORTANT: The restart will terminate your current process. Warn the user that you are about to restart and that they should wait a few seconds before messaging again.",
+      "**Rollback:** If the service doesn't come back healthy after a deploy (check with `sudo systemctl status claude-agent`), roll back immediately:",
+      "  `cd /home/ubuntu/agent && git revert HEAD --no-edit && bash scripts/deploy-self.sh`",
+      "Never force-push or rewrite git history. Always create new commits, even for rollbacks.",
     ],
   },
 ];

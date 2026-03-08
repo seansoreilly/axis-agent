@@ -48,12 +48,11 @@ async function main(): Promise<void> {
     jobs
   );
 
-  // Set up voice calling (optional — disabled if LIVEKIT_URL not set)
-  // Dynamic import to avoid crashing if native LiveKit bindings are missing
+  // Set up voice calling (optional — disabled if VAPI_API_KEY not set)
   let voiceService: VoiceServiceType | undefined;
-  if (config.livekit) {
+  if (config.vapi) {
     const { VoiceService } = await import("./voice.js");
-    voiceService = new VoiceService(config, memory, (callId, status, result) => {
+    voiceService = new VoiceService(config.vapi, memory, (callId, status, result) => {
       if (primaryUser && telegram) {
         let msg: string;
         if (status === "completed") {
@@ -80,14 +79,7 @@ async function main(): Promise<void> {
           });
       }
     });
-    try {
-      await voiceService.start();
-      info("main", "Voice calling enabled");
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logError("main", `Voice service failed to start: ${errMsg}`);
-      voiceService = undefined;
-    }
+    info("main", "Voice calling enabled");
   }
 
   // Set up Telegram integration (with scheduler and voice service)
@@ -137,9 +129,6 @@ async function main(): Promise<void> {
     clearInterval(tokenRefreshTimer);
     telegram.stop();
     scheduler.stopAll();
-    if (voiceService) {
-      voiceService.stop().catch(() => {});
-    }
     gateway.close().finally(() => process.exit(0));
   };
 

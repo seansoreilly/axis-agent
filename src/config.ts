@@ -1,10 +1,8 @@
 import { existsSync, mkdirSync } from "node:fs";
 
-export interface LiveKitConfig {
-  url: string;
+export interface VapiConfig {
   apiKey: string;
-  apiSecret: string;
-  sipTrunkId?: string;
+  phoneNumberId: string;
   ttsVoiceId?: string;
 }
 
@@ -24,7 +22,7 @@ export interface Config {
   };
   memoryDir: string;
   owntracksToken?: string;
-  livekit?: LiveKitConfig;
+  vapi?: VapiConfig;
 }
 
 function requireEnv(key: string): string {
@@ -59,15 +57,13 @@ export function loadConfig(): Config {
     );
   }
 
-  // LiveKit voice calling config (optional — feature disabled if LIVEKIT_URL not set)
-  let livekit: LiveKitConfig | undefined;
-  const livekitUrl = process.env["LIVEKIT_URL"];
-  if (livekitUrl) {
-    livekit = {
-      url: livekitUrl,
-      apiKey: requireEnv("LIVEKIT_API_KEY"),
-      apiSecret: requireEnv("LIVEKIT_API_SECRET"),
-      sipTrunkId: process.env["LIVEKIT_SIP_TRUNK_ID"],
+  // Vapi voice calling config (optional — feature disabled if VAPI_API_KEY not set)
+  let vapi: VapiConfig | undefined;
+  const vapiApiKey = process.env["VAPI_API_KEY"];
+  if (vapiApiKey) {
+    vapi = {
+      apiKey: vapiApiKey,
+      phoneNumberId: requireEnv("VAPI_PHONE_NUMBER_ID"),
       ttsVoiceId: process.env["CARTESIA_VOICE_ID"],
     };
   }
@@ -88,6 +84,6 @@ export function loadConfig(): Config {
     },
     memoryDir,
     owntracksToken: process.env["OWNTRACKS_TOKEN"],
-    livekit,
+    vapi,
   };
 }

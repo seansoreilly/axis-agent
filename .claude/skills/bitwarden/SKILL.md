@@ -36,10 +36,8 @@ All secrets are in the `claude-agent-lightsail` Bitwarden folder. Each item is a
 | `trello-api-key` | `TRELLO_API_KEY` |
 | `trello-api-token` | `TRELLO_API_TOKEN` |
 | `owntracks-token` | `OWNTRACKS_TOKEN` |
-| `livekit-url` | `LIVEKIT_URL` |
-| `livekit-api-key` | `LIVEKIT_API_KEY` |
-| `livekit-api-secret` | `LIVEKIT_API_SECRET` |
-| `livekit-sip-trunk-id` | `LIVEKIT_SIP_TRUNK_ID` |
+| `vapi-api-key` | `VAPI_API_KEY` |
+| `vapi-phone-number-id` | `VAPI_PHONE_NUMBER_ID` |
 | `cartesia-voice-id` | `CARTESIA_VOICE_ID` |
 
 **JSON credential files** — fetched by item ID:

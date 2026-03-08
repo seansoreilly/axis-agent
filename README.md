@@ -86,20 +86,20 @@ For services not covered by Composio or requiring deeper integration:
 - **Bitwarden** — add, update, or rotate secrets in the Bitwarden vault and sync to the server.
 - **Gmail** — fetch, evaluate, archive, and unsubscribe from emails via IMAP with incremental dual-UID watermark triage.
 
-#### Voice Calling (LiveKit)
+#### Voice Calling (Vapi)
 
-Outbound phone calls via LiveKit Cloud with real-time voice AI. The agent joins a LiveKit room, dials out via SIP trunk (Twilio), and has a two-way voice conversation using STT/LLM/TTS — all billed through the LiveKit account (no separate Deepgram/OpenAI/Cartesia API keys needed).
+Outbound phone calls via Vapi REST API with real-time voice AI. Creates calls with an inline assistant config using deepgram/nova-3 STT, openai/gpt-4o-mini LLM, and cartesia/sonic-2 TTS. Supports DTMF for IVR menu navigation.
 
-- **LiveKit hosted inference** — model strings (`deepgram/nova-3`, `openai/gpt-4o-mini`, `cartesia/sonic-2`) instead of plugin instances
 - **Australian female voice** by default (Cartesia "Australian Woman")
 - **Agent-initiated calls** — the agent can decide to call someone based on conversation context (confirms with user first, looks up contacts automatically)
 - **Telegram integration** — `/call Sean [context]` or `/call +61412345678 [context]` — accepts contact names or phone numbers
 - **HTTP API** — `POST /calls` with `{ "phoneNumber": "+61...", "context": "..." }`
-- **Call transcripts** — captures both agent and caller speech during the call via `ConversationItemAdded` events, delivers the full transcript to Telegram when the call ends
-- **Call monitoring** — tracks active calls, auto-cleanup on room close, 10-minute safety timeout
+- **Call transcripts** — Vapi captures the full transcript, delivered to Telegram when the call ends
+- **Call monitoring** — tracks active calls via status polling, 10-minute safety timeout
 - **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations
+- **DTMF support** — can navigate IVR menus during calls
 
-Requires: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_SIP_TRUNK_ID`. Optional: `CARTESIA_VOICE_ID`.
+Requires: `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`. Optional: `CARTESIA_VOICE_ID`.
 
 #### Playwright MCP (Browser Automation)
 
@@ -271,7 +271,7 @@ DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh --self-heal
 | `/forget key` | Remove a fact |
 | `/memories` | List all facts |
 | `/status` | Show uptime, sessions, model, cost, tasks |
-| `/call <name or +number> [context]` | Make an outbound voice call via LiveKit |
+| `/call <name or +number> [context]` | Make an outbound voice call via Vapi |
 | `/post [notes]` | Create a Facebook post using recently uploaded photos |
 
 Any other message is sent to Claude as a prompt. Sessions persist — follow-up messages maintain conversation context.
@@ -337,8 +337,7 @@ src/
   prompt-config.ts      # Prompt section definitions and defaults
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
-  voice.ts              # Voice calling service (LiveKit agent dispatch, room management)
-  voice-agent.ts        # LiveKit voice agent entry (STT/LLM/TTS pipeline, SIP dialing)
+  voice.ts              # Voice calling service (Vapi REST API, call monitoring)
 scripts/
   sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault

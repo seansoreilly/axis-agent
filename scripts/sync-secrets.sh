@@ -35,10 +35,8 @@ declare -A SECRET_MAP=(
   [TRELLO_API_KEY]="trello-api-key"
   [TRELLO_API_TOKEN]="trello-api-token"
   [OWNTRACKS_TOKEN]="owntracks-token"
-  [LIVEKIT_URL]="livekit-url"
-  [LIVEKIT_API_KEY]="livekit-api-key"
-  [LIVEKIT_API_SECRET]="livekit-api-secret"
-  [LIVEKIT_SIP_TRUNK_ID]="livekit-sip-trunk-id"
+  [VAPI_API_KEY]="vapi-api-key"
+  [VAPI_PHONE_NUMBER_ID]="vapi-phone-number-id"
   [CARTESIA_VOICE_ID]="cartesia-voice-id"
 )
 

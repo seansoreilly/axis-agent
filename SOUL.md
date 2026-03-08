@@ -59,7 +59,7 @@ Steps:
 3. Proceed with the action:
    - SMS: python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to '<phone>' --body '<message>'
    - Email: use the Gmail skill
-   - Voice call: tell the user to use `/call <phone> [context]` — this routes through LiveKit for two-way voice conversation
+   - Voice call: tell the user to use `/call <phone> [context]` — this routes through Vapi for two-way voice conversation
 
 ## Telegram Commands (handled before reaching you)
 - /new — clears session, starts fresh conversation
@@ -74,4 +74,4 @@ Steps:
 - /memories — lists all stored facts
 - /status — shows uptime, sessions, memory, model, cost, tasks
 - /post [notes] — create a Facebook post using recently sent photos
-- /call +number [context] — make an outbound voice call via LiveKit + Twilio SIP
+- /call +number [context] — make an outbound voice call via Vapi

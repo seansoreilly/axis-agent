@@ -794,7 +794,7 @@ export class TelegramIntegration {
         if (!this.voiceService?.isAvailable()) {
           await this.bot.sendMessage(
             chatId,
-            "Voice calling is not configured. Set LIVEKIT_URL and LIVEKIT_SIP_TRUNK_ID in .env"
+            "Voice calling is not configured. Set VAPI_API_KEY and VAPI_PHONE_NUMBER_ID in .env"
           );
           return;
         }

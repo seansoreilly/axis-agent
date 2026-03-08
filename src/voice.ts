@@ -1,10 +1,6 @@
-import { readFileSync, unlinkSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import pino from "pino";
-import { AgentServer, ServerOptions } from "@livekit/agents";
-import { AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
-import type { Config, LiveKitConfig } from "./config.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { VapiConfig } from "./config.js";
 import type { Memory } from "./memory.js";
 import { info, error as logError } from "./logger.js";
 
@@ -22,9 +18,8 @@ export interface TranscriptEntry {
 
 export interface VoiceCallResult {
   callId: string;
-  roomName: string;
   phoneNumber: string;
-  status: "initiating" | "ringing" | "connected" | "completed" | "failed";
+  status: "ringing" | "in-progress" | "completed" | "failed";
   durationSeconds: number;
   error?: string;
   transcript?: TranscriptEntry[];
@@ -38,47 +33,39 @@ type CallStatusCallback = (
 
 interface ActiveCall {
   callId: string;
-  roomName: string;
+  vapiCallId: string;
   phoneNumber: string;
   userId?: number;
   startedAt: number;
 }
 
+interface VapiCallResponse {
+  id: string;
+  status: string;
+  startedAt?: string;
+  endedAt?: string;
+  artifact?: {
+    transcript?: string;
+  };
+}
+
+const VAPI_BASE = "https://api.vapi.ai";
+
 export class VoiceService {
-  private readonly lk: LiveKitConfig;
+  private readonly config: VapiConfig;
   private readonly memory: Memory;
   private readonly onCallStatus?: CallStatusCallback;
-  private server?: AgentServer;
-  private dispatchClient: AgentDispatchClient;
-  private roomClient: RoomServiceClient;
   private activeCalls: Map<string, ActiveCall> = new Map();
   private soulMd: string | null = null;
 
   constructor(
-    config: Config,
+    vapiConfig: VapiConfig,
     memory: Memory,
     onCallStatus?: CallStatusCallback
   ) {
-    if (!config.livekit) {
-      throw new Error("LiveKit config is required for VoiceService");
-    }
-    this.lk = config.livekit;
+    this.config = vapiConfig;
     this.memory = memory;
     this.onCallStatus = onCallStatus;
-
-    // HTTP URL for server SDK (convert wss:// to https://)
-    const httpUrl = this.lk.url
-      .replace("wss://", "https://")
-      .replace("ws://", "http://");
-
-    this.dispatchClient = new AgentDispatchClient(httpUrl, this.lk.apiKey, this.lk.apiSecret);
-    this.roomClient = new RoomServiceClient(
-      httpUrl,
-      this.lk.apiKey,
-      this.lk.apiSecret
-    );
-
-    // Load SOUL.md for voice personality
     this.soulMd = this.loadSoulMd();
   }
 
@@ -97,53 +84,8 @@ export class VoiceService {
     return null;
   }
 
-  async start(): Promise<void> {
-    // Resolve the voice agent file path (compiled to dist/)
-    const thisDir = dirname(fileURLToPath(import.meta.url));
-    const agentFile = resolve(thisDir, "voice-agent.js");
-
-    const opts = new ServerOptions({
-      agent: agentFile,
-      wsURL: this.lk.url,
-      apiKey: this.lk.apiKey,
-      apiSecret: this.lk.apiSecret,
-      agentName: "axis-voice-agent",
-      numIdleProcesses: 1,
-      logLevel: "warn",
-    });
-
-    // LiveKit agents SDK checks globalThis for a pino logger via well-known symbols.
-    // Normally initializeLogger() is called by the CLI entrypoint, but we use AgentServer
-    // directly, so we replicate the init here to avoid "logger not initialized" errors.
-    const g = globalThis as Record<symbol, unknown>;
-    const loggerKey = Symbol.for("@livekit/agents:logger");
-    const optsKey = Symbol.for("@livekit/agents:loggerOptions");
-    if (!g[loggerKey]) {
-      g[optsKey] = { pretty: false, level: "info" };
-      g[loggerKey] = pino(
-        { level: "info", serializers: { error: pino.stdSerializers.err } },
-        process.stdout,
-      );
-    }
-
-    this.server = new AgentServer(opts);
-    // run() blocks forever (WebSocket event loop) — fire-and-forget
-    this.server.run().catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      logError("voice", `Agent worker crashed: ${msg}`);
-    });
-    info("voice", `Agent worker starting with ${this.lk.url}`);
-  }
-
-  async stop(): Promise<void> {
-    if (this.server) {
-      await this.server.close();
-      info("voice", "Agent worker stopped");
-    }
-  }
-
   isAvailable(): boolean {
-    return !!this.server && !!this.lk.sipTrunkId;
+    return !!this.config.phoneNumberId;
   }
 
   getActiveCall(callId: string): ActiveCall | undefined {
@@ -155,50 +97,51 @@ export class VoiceService {
   }
 
   async makeCall(request: VoiceCallRequest): Promise<VoiceCallResult> {
-    if (!this.lk.sipTrunkId) {
-      throw new Error(
-        "SIP trunk not configured. Set LIVEKIT_SIP_TRUNK_ID in .env"
-      );
-    }
-
     const callId = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const roomName = `voice-${callId}`;
 
     info(
       "voice",
       `Initiating call ${callId} to ${request.phoneNumber}${request.context ? ` (${request.context.slice(0, 50)})` : ""}`
     );
 
-    // Build voice system prompt with personality and memory context
     const systemPrompt = this.buildVoicePrompt(request);
     const firstMessage = this.buildGreeting(request);
+    const voiceId =
+      this.config.ttsVoiceId ?? "043cfc81-d69f-4bee-ae1e-7862cb358650"; // Australian Woman
 
     try {
-      // Create room with metadata for the agent (includes SIP trunk info so
-      // the agent can dial out from within its entry function)
-      const roomMetadata = JSON.stringify({
-        systemPrompt,
-        firstMessage,
-        phoneNumber: request.phoneNumber,
-        sipTrunkId: this.lk.sipTrunkId,
+      const response = await fetch(`${VAPI_BASE}/call`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          phoneNumberId: this.config.phoneNumberId,
+          customer: { number: request.phoneNumber },
+          assistant: {
+            firstMessage,
+            model: {
+              provider: "openai",
+              model: "gpt-4o-mini",
+              messages: [{ role: "system", content: systemPrompt }],
+            },
+            transcriber: { provider: "deepgram", model: "nova-3" },
+            voice: { provider: "cartesia", voiceId },
+          },
+        }),
       });
 
-      await this.roomClient.createRoom({
-        name: roomName,
-        metadata: roomMetadata,
-        emptyTimeout: 30, // close room 30s after last participant leaves
-        maxParticipants: 3, // agent + caller + observer
-      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Vapi API error ${response.status}: ${body}`);
+      }
 
-      // Dispatch the agent to the room — the agent will join, then dial out via SIP
-      await this.dispatchClient.createDispatch(roomName, "axis-voice-agent", {
-        metadata: roomMetadata,
-      });
+      const vapiCall = (await response.json()) as VapiCallResponse;
 
-      // Track the active call
       const activeCall: ActiveCall = {
         callId,
-        roomName,
+        vapiCallId: vapiCall.id,
         phoneNumber: request.phoneNumber,
         userId: request.userId,
         startedAt: Date.now(),
@@ -207,7 +150,6 @@ export class VoiceService {
 
       const result: VoiceCallResult = {
         callId,
-        roomName,
         phoneNumber: request.phoneNumber,
         status: "ringing",
         durationSeconds: 0,
@@ -216,7 +158,7 @@ export class VoiceService {
       this.onCallStatus?.(callId, "ringing", result);
 
       // Monitor call completion in background
-      this.monitorCall(callId, roomName).catch((err) => {
+      this.monitorCall(callId).catch((err) => {
         logError("voice", `Call monitor error: ${err}`);
       });
 
@@ -228,7 +170,6 @@ export class VoiceService {
 
       const result: VoiceCallResult = {
         callId,
-        roomName,
         phoneNumber: request.phoneNumber,
         status: "failed",
         durationSeconds: 0,
@@ -243,7 +184,6 @@ export class VoiceService {
   private buildVoicePrompt(request: VoiceCallRequest): string {
     const parts: string[] = [];
 
-    // Base personality from SOUL.md (condensed for voice)
     if (this.soulMd) {
       parts.push(
         "# Personality",
@@ -262,16 +202,10 @@ export class VoiceService {
       );
     }
 
-    // Call purpose
     if (request.context) {
-      parts.push(
-        "# Call Purpose",
-        request.context,
-        ""
-      );
+      parts.push("# Call Purpose", request.context, "");
     }
 
-    // Inject relevant memory facts
     const coreContext = this.memory.getContext({
       categories: ["personal", "preference"],
     });
@@ -279,7 +213,6 @@ export class VoiceService {
       parts.push("# Known Facts About the User", coreContext, "");
     }
 
-    // Voice-specific instructions
     parts.push(
       "# Voice Conversation Rules",
       "- Speak naturally as if on a phone call",
@@ -299,44 +232,53 @@ export class VoiceService {
     return "Hello, this is Axis Agent calling. How are you?";
   }
 
-  private readTranscript(roomName: string): TranscriptEntry[] | undefined {
-    const filePath = `/tmp/axis-transcript-${roomName}.json`;
-    try {
-      const data = readFileSync(filePath, "utf-8");
-      unlinkSync(filePath); // Clean up after reading
-      return JSON.parse(data) as TranscriptEntry[];
-    } catch {
-      return undefined; // File doesn't exist or parse error
+  private parseTranscript(transcriptText: string): TranscriptEntry[] {
+    const entries: TranscriptEntry[] = [];
+    const lines = transcriptText.split("\n").filter(Boolean);
+    for (const line of lines) {
+      const match = line.match(/^(AI|User):\s*(.+)$/i);
+      if (match) {
+        entries.push({
+          role: match[1].toLowerCase() === "ai" ? "assistant" : "user",
+          text: match[2],
+          timestamp: Date.now(),
+        });
+      }
     }
+    return entries;
   }
 
-  private async monitorCall(
-    callId: string,
-    roomName: string
-  ): Promise<void> {
+  private async monitorCall(callId: string): Promise<void> {
     const activeCall = this.activeCalls.get(callId);
     if (!activeCall) return;
 
-    // Poll room status until the call ends
     const pollInterval = setInterval(async () => {
       try {
-        const rooms = await this.roomClient.listRooms([roomName]);
-        if (rooms.length === 0) {
-          // Room closed — call ended
+        const response = await fetch(
+          `${VAPI_BASE}/call/${activeCall.vapiCallId}`,
+          {
+            headers: { Authorization: `Bearer ${this.config.apiKey}` },
+          }
+        );
+
+        if (!response.ok) return; // transient error, keep polling
+
+        const vapiCall = (await response.json()) as VapiCallResponse;
+
+        if (vapiCall.status === "ended") {
           clearInterval(pollInterval);
+          this.activeCalls.delete(callId);
+
           const durationSeconds = Math.round(
             (Date.now() - activeCall.startedAt) / 1000
           );
-          this.activeCalls.delete(callId);
 
-          // Wait briefly for the subprocess Close handler to write the transcript.
-          // Room disappearing and session Close are separate events.
-          await new Promise((r) => setTimeout(r, 2000));
-          const transcript = this.readTranscript(roomName);
+          const transcript = vapiCall.artifact?.transcript
+            ? this.parseTranscript(vapiCall.artifact.transcript)
+            : undefined;
 
           const result: VoiceCallResult = {
             callId,
-            roomName,
             phoneNumber: activeCall.phoneNumber,
             status: "completed",
             durationSeconds,
@@ -350,25 +292,21 @@ export class VoiceService {
           this.onCallStatus?.(callId, "completed", result);
         }
       } catch {
-        // Room service error — likely transient, keep polling
+        // transient error, keep polling
       }
     }, 5000);
 
-    // Safety timeout: clean up after 10 minutes regardless
-    setTimeout(async () => {
+    // Safety timeout: clean up after 10 minutes
+    setTimeout(() => {
       clearInterval(pollInterval);
       if (this.activeCalls.has(callId)) {
         this.activeCalls.delete(callId);
         info("voice", `Call ${callId} timed out`);
-        await new Promise((r) => setTimeout(r, 2000));
-        const transcript = this.readTranscript(roomName);
         this.onCallStatus?.(callId, "completed", {
           callId,
-          roomName,
           phoneNumber: activeCall.phoneNumber,
           status: "completed",
           durationSeconds: 600,
-          transcript,
         });
       }
     }, 600_000);
