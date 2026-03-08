@@ -55,11 +55,23 @@ async function main(): Promise<void> {
     const { VoiceService } = await import("./voice.js");
     voiceService = new VoiceService(config, memory, (callId, status, result) => {
       if (primaryUser && telegram) {
-        const msg = status === "completed"
-          ? `Call ${callId} completed (${result?.durationSeconds ?? 0}s)`
-          : status === "failed"
-            ? `Call ${callId} failed: ${result?.error ?? "unknown"}`
-            : `Call ${callId}: ${status}`;
+        let msg: string;
+        if (status === "completed") {
+          const duration = result?.durationSeconds ?? 0;
+          const lines = [`Call ${callId} completed (${duration}s)`];
+          if (result?.transcript?.length) {
+            lines.push("", "Transcript:");
+            for (const entry of result.transcript) {
+              const speaker = entry.role === "assistant" ? "Agent" : "Caller";
+              lines.push(`${speaker}: ${entry.text}`);
+            }
+          }
+          msg = lines.join("\n");
+        } else if (status === "failed") {
+          msg = `Call ${callId} failed: ${result?.error ?? "unknown"}`;
+        } else {
+          msg = `Call ${callId}: ${status}`;
+        }
         telegram
           .sendNotification(primaryUser, msg)
           .catch((err) => {

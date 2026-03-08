@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import pino from "pino";
@@ -14,6 +14,12 @@ export interface VoiceCallRequest {
   userId?: number; // Telegram user who initiated
 }
 
+export interface TranscriptEntry {
+  role: "user" | "assistant";
+  text: string;
+  timestamp: number;
+}
+
 export interface VoiceCallResult {
   callId: string;
   roomName: string;
@@ -21,6 +27,7 @@ export interface VoiceCallResult {
   status: "initiating" | "ringing" | "connected" | "completed" | "failed";
   durationSeconds: number;
   error?: string;
+  transcript?: TranscriptEntry[];
 }
 
 type CallStatusCallback = (
@@ -290,6 +297,17 @@ export class VoiceService {
     return "Hello, this is Axis Agent calling. How are you?";
   }
 
+  private readTranscript(roomName: string): TranscriptEntry[] | undefined {
+    const filePath = `/tmp/axis-transcript-${roomName}.json`;
+    try {
+      const data = readFileSync(filePath, "utf-8");
+      unlinkSync(filePath); // Clean up after reading
+      return JSON.parse(data) as TranscriptEntry[];
+    } catch {
+      return undefined; // File doesn't exist or parse error
+    }
+  }
+
   private async monitorCall(
     callId: string,
     roomName: string
@@ -309,17 +327,21 @@ export class VoiceService {
           );
           this.activeCalls.delete(callId);
 
+          // Read transcript written by the voice agent subprocess
+          const transcript = this.readTranscript(roomName);
+
           const result: VoiceCallResult = {
             callId,
             roomName,
             phoneNumber: activeCall.phoneNumber,
             status: "completed",
             durationSeconds,
+            transcript,
           };
 
           info(
             "voice",
-            `Call ${callId} completed (${durationSeconds}s)`
+            `Call ${callId} completed (${durationSeconds}s, ${transcript?.length ?? 0} transcript entries)`
           );
           this.onCallStatus?.(callId, "completed", result);
         }

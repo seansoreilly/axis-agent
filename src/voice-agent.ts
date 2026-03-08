@@ -1,8 +1,15 @@
+import { writeFileSync } from "node:fs";
 import { defineAgent, voice, type JobContext } from "@livekit/agents";
 import * as silero from "@livekit/agents-plugin-silero";
 import { SipClient } from "livekit-server-sdk";
 
-const { Agent, AgentSession } = voice;
+const { Agent, AgentSession, AgentSessionEventTypes } = voice;
+
+interface TranscriptEntry {
+  role: "user" | "assistant";
+  text: string;
+  timestamp: number;
+}
 
 interface CallMetadata {
   systemPrompt?: string;
@@ -54,6 +61,38 @@ export default defineAgent({
     });
 
     const session = new AgentSession({});
+
+    // Capture transcript from conversation events
+    const transcript: TranscriptEntry[] = [];
+    const roomName = ctx.room.name ?? "unknown";
+
+    session.on(AgentSessionEventTypes.ConversationItemAdded, (ev) => {
+      const item = ev.item;
+      if (item.role === "user" || item.role === "assistant") {
+        const text = item.textContent;
+        if (text) {
+          transcript.push({
+            role: item.role,
+            text,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    });
+
+    session.on(AgentSessionEventTypes.Close, () => {
+      if (transcript.length > 0) {
+        try {
+          writeFileSync(
+            `/tmp/axis-transcript-${roomName}.json`,
+            JSON.stringify(transcript),
+          );
+        } catch {
+          // Best-effort — don't crash the agent
+        }
+      }
+    });
+
     await session.start({ agent, room: ctx.room });
 
     // Dial out via SIP if this is an outbound call
