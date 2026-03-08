@@ -802,43 +802,38 @@ export class TelegramIntegration {
         if (!argText.trim()) {
           await this.bot.sendMessage(
             chatId,
-            "Usage: /call +61412345678 [context]\nExample: /call +61412345678 Remind about the meeting at 3pm"
+            "Usage: /call <name or +number> [context]\nExample: /call Sean Ask about dinner\nExample: /call +61412345678 Remind about the meeting"
           );
           return;
         }
 
-        // Parse: first arg is phone number, rest is context
+        // Parse: first arg is phone number or contact name, rest is context
         const callParts = argText.trim().split(/\s+/);
-        const phoneNumber = callParts[0];
-        const callContext = callParts.slice(1).join(" ") || undefined;
+        const firstArg = callParts[0];
 
-        // Validate E.164 format
-        if (!/^\+\d{7,15}$/.test(phoneNumber)) {
-          await this.bot.sendMessage(
-            chatId,
-            "Phone number must be in E.164 format (e.g. +61412345678)"
-          );
-          return;
-        }
-
-        await this.bot.sendMessage(chatId, `Calling ${phoneNumber}...`);
-
-        try {
-          const result = await this.voiceService.makeCall({
-            phoneNumber,
-            context: callContext,
-            userId,
-          });
-
-          if (result.status === "failed") {
-            await this.bot.sendMessage(
-              chatId,
-              `Call failed: ${result.error ?? "unknown error"}`
-            );
+        // If first arg is E.164, use it directly
+        if (/^\+\d{7,15}$/.test(firstArg)) {
+          const callContext = callParts.slice(1).join(" ") || undefined;
+          await this.bot.sendMessage(chatId, `Calling ${firstArg}...`);
+          try {
+            const result = await this.voiceService.makeCall({
+              phoneNumber: firstArg,
+              context: callContext,
+              userId,
+            });
+            if (result.status === "failed") {
+              await this.bot.sendMessage(
+                chatId,
+                `Call failed: ${result.error ?? "unknown error"}`
+              );
+            }
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            await this.bot.sendMessage(chatId, `Call failed: ${errMsg}`);
           }
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          await this.bot.sendMessage(chatId, `Call failed: ${errMsg}`);
+        } else {
+          // Not a phone number — pass to agent for contact lookup + call
+          await this.runAgent(chatId, userId, `Call ${argText.trim()}`);
         }
         break;
       }
