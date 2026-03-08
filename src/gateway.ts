@@ -45,6 +45,7 @@ interface TwilioSmsBody {
 interface CallBody {
   phoneNumber: string;
   context?: string;
+  recipientName?: string;
 }
 
 interface GatewayOptions {
@@ -143,7 +144,7 @@ export async function createGateway(
   // Voice calling endpoints (only if voice service is configured)
   if (opts.voiceService) {
     app.post<{ Body: CallBody }>("/calls", async (request, reply) => {
-      const { phoneNumber, context } = request.body;
+      const { phoneNumber, context, recipientName } = request.body;
       if (!phoneNumber || typeof phoneNumber !== "string") {
         return reply.status(400).send({ error: "phoneNumber is required" });
       }
@@ -153,7 +154,7 @@ export async function createGateway(
       if (!opts.voiceService!.isAvailable()) {
         return reply.status(503).send({ error: "Voice service not available (SIP trunk not configured)" });
       }
-      const result = await opts.voiceService!.makeCall({ phoneNumber, context });
+      const result = await opts.voiceService!.makeCall({ phoneNumber, context, recipientName });
       return { callId: result.callId, status: result.status, error: result.error };
     });
 

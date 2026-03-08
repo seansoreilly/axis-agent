@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 export interface VapiConfig {
   apiKey: string;
   phoneNumberId: string;
-  assistantId: string;
+  assistantId?: string;
   dtmfToolId: string;
   ttsVoiceId?: string;
 }
@@ -66,7 +66,7 @@ export function loadConfig(): Config {
     vapi = {
       apiKey: vapiApiKey,
       phoneNumberId: requireEnv("VAPI_PHONE_NUMBER_ID"),
-      assistantId: requireEnv("VAPI_ASSISTANT_ID"),
+      assistantId: process.env["VAPI_ASSISTANT_ID"],
       dtmfToolId: requireEnv("VAPI_DTMF_TOOL_ID"),
       ttsVoiceId: process.env["CARTESIA_VOICE_ID"],
     };

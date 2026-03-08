@@ -93,13 +93,14 @@ Outbound phone calls via Vapi REST API with real-time voice AI. Creates calls wi
 - **Australian female voice** by default (Cartesia "Australian Woman")
 - **Agent-initiated calls** — the agent can decide to call someone based on conversation context (confirms with user first, looks up contacts automatically)
 - **Telegram integration** — `/call Sean [context]` or `/call +61412345678 [context]` — accepts contact names or phone numbers
-- **HTTP API** — `POST /calls` with `{ "phoneNumber": "+61...", "context": "..." }`
+- **HTTP API** — `POST /calls` with `{ "phoneNumber": "+61...", "context": "...", "recipientName": "..." }`
 - **Call transcripts** — Vapi captures the full transcript, delivered to Telegram when the call ends
 - **Call monitoring** — tracks active calls via status polling, 10-minute safety timeout
-- **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations
+- **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations, with owner context (`OWNER_NAME` env var)
 - **DTMF support** — can navigate IVR menus during calls
+- **Natural conversation** — endCall tool for clean call termination, smart endpointing with punctuation-aware transcription for minimal response latency
 
-Requires: `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`. Optional: `CARTESIA_VOICE_ID`.
+Requires: `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_DTMF_TOOL_ID`. Optional: `CARTESIA_VOICE_ID`, `OWNER_NAME`.
 
 #### Playwright MCP (Browser Automation)
 
@@ -285,7 +286,7 @@ Any other message is sent to Claude as a prompt. Sessions persist — follow-up 
 | `/tasks` | GET | List scheduled tasks |
 | `/tasks` | POST | Create scheduled task (`{ "id", "name", "schedule", "prompt" }`) |
 | `/tasks/:id` | DELETE | Remove scheduled task |
-| `/calls` | POST | Initiate outbound voice call (`{ "phoneNumber": "+61...", "context?": "..." }`) |
+| `/calls` | POST | Initiate outbound voice call (`{ "phoneNumber": "+61...", "context?": "...", "recipientName?": "..." }`) |
 | `/calls/active` | GET | List active voice calls |
 
 ## Secret Management
