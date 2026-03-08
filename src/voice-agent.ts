@@ -127,5 +127,12 @@ export default defineAgent({
       session.say(firstMessage);
       await ctx.waitForParticipant();
     }
+
+    // Keep the entry function alive until the session closes.
+    // Without this, the process exits immediately after say() and the
+    // callee never gets a chance to respond.
+    await new Promise<void>((resolve) => {
+      session.on(AgentSessionEventTypes.Close, () => resolve());
+    });
   },
 });
