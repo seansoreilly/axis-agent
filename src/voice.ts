@@ -247,7 +247,9 @@ export class VoiceService {
     if (this.soulMd) {
       parts.push(
         "# Personality",
-        "You are Axis Agent making a phone call. Speak naturally and conversationally.",
+        this.soulMd,
+        "",
+        "Adapt the above personality for a phone call. Speak naturally and conversationally.",
         "Keep responses short — this is a voice conversation, not text.",
         "Use simple sentences. Avoid markdown, bullet points, or formatting.",
         ""
@@ -327,7 +329,9 @@ export class VoiceService {
           );
           this.activeCalls.delete(callId);
 
-          // Read transcript written by the voice agent subprocess
+          // Wait briefly for the subprocess Close handler to write the transcript.
+          // Room disappearing and session Close are separate events.
+          await new Promise((r) => setTimeout(r, 2000));
           const transcript = this.readTranscript(roomName);
 
           const result: VoiceCallResult = {
@@ -351,17 +355,20 @@ export class VoiceService {
     }, 5000);
 
     // Safety timeout: clean up after 10 minutes regardless
-    setTimeout(() => {
+    setTimeout(async () => {
       clearInterval(pollInterval);
       if (this.activeCalls.has(callId)) {
         this.activeCalls.delete(callId);
         info("voice", `Call ${callId} timed out`);
+        await new Promise((r) => setTimeout(r, 2000));
+        const transcript = this.readTranscript(roomName);
         this.onCallStatus?.(callId, "completed", {
           callId,
           roomName,
           phoneNumber: activeCall.phoneNumber,
           status: "completed",
           durationSeconds: 600,
+          transcript,
         });
       }
     }, 600_000);

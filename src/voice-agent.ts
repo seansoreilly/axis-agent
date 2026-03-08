@@ -5,11 +5,7 @@ import { SipClient } from "livekit-server-sdk";
 
 const { Agent, AgentSession, AgentSessionEventTypes } = voice;
 
-interface TranscriptEntry {
-  role: "user" | "assistant";
-  text: string;
-  timestamp: number;
-}
+import type { TranscriptEntry } from "./voice.js";
 
 interface CallMetadata {
   systemPrompt?: string;
