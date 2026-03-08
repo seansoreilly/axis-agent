@@ -48,19 +48,6 @@ export function tokenNeedsRefresh(): boolean {
 }
 
 /**
- * Returns ms until token expires, or 0 if already expired.
- */
-export function tokenExpiresInMs(): number {
-  try {
-    const creds = readCredentials();
-    const remaining = creds.claudeAiOauth.expiresAt - Date.now();
-    return Math.max(0, remaining);
-  } catch {
-    return 0;
-  }
-}
-
-/**
  * Refresh the OAuth access token using the refresh token.
  * Updates the credentials file in place.
  * Returns true on success, false on failure.

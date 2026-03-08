@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Fact, FactCategory, SessionRecord } from "./memory.js";
@@ -453,11 +453,4 @@ function inferCategory(key: string): FactCategory {
     return "system";
   }
   return "general";
-}
-
-export function exportLegacyJson(dir: string): void {
-  const store = new SqliteStore(dir);
-  const facts = store.getAllFacts();
-  const sessions = store.listSessions();
-  writeFileSync(join(dir, "store.json"), JSON.stringify({ facts, sessions }, null, 2));
 }

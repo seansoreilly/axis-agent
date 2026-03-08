@@ -65,7 +65,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
       "Steps:",
       "1. Run: node /home/ubuntu/agent/scripts/lookup-contact.js \"<name>\"",
       "2. Extract phone/email from the JSON output",
-      "3. Use the appropriate skill (Twilio for SMS/calls, Gmail for email) — read its SKILL.md for usage",
+      "3. Use the appropriate method: Twilio skill for SMS, Gmail skill for email, /call command for voice calls (LiveKit) — read SKILL.md for skill usage",
       "You have skills installed in `.claude/skills/`. Run `ls .claude/skills/` to discover them, then read the SKILL.md for usage.",
     ],
   },
