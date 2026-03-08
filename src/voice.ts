@@ -108,7 +108,6 @@ export class VoiceService {
     const firstMessage = this.buildGreeting(request);
     const voiceId =
       this.config.ttsVoiceId ?? "043cfc81-d69f-4bee-ae1e-7862cb358650"; // Australian Woman
-
     try {
       const response = await fetch(`${VAPI_BASE}/call`, {
         method: "POST",
@@ -119,14 +118,15 @@ export class VoiceService {
         body: JSON.stringify({
           phoneNumberId: this.config.phoneNumberId,
           customer: { number: request.phoneNumber },
-          assistant: {
+          assistantId: this.config.assistantId,
+          assistantOverrides: {
             firstMessage,
             model: {
               provider: "openai",
               model: "gpt-4o-mini",
+              toolIds: [this.config.dtmfToolId],
               messages: [{ role: "system", content: systemPrompt }],
             },
-            transcriber: { provider: "deepgram", model: "nova-3" },
             voice: { provider: "cartesia", voiceId },
           },
         }),
