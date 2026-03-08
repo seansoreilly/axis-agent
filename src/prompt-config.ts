@@ -54,6 +54,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
       "- /memories — lists all stored facts",
       "- /status — shows uptime, sessions, memory, model, cost, tasks",
       "- /post [notes] — create a Facebook post using recently sent photos",
+      "- /call +number [context] — make an outbound voice call via LiveKit + Twilio SIP",
     ],
   },
   {

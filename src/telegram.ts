@@ -3,6 +3,7 @@ import { unlinkSync } from "node:fs";
 import type { Agent, AgentResult } from "./agent.js";
 import type { Memory } from "./memory.js";
 import type { Scheduler } from "./scheduler.js";
+import type { VoiceService } from "./voice.js";
 import { info, error as logError } from "./logger.js";
 import { TelegramMediaService } from "./telegram-media.js";
 import { TelegramProgressReporter } from "./telegram-progress.js";
@@ -60,6 +61,7 @@ export class TelegramIntegration {
   private agent: Agent;
   private memory: Memory;
   private scheduler?: Scheduler;
+  private voiceService?: VoiceService;
   private allowedUsers: Set<number>;
   private userSessions: Map<number, string> = new Map();
   private processingUsers: Set<number> = new Set();
@@ -73,13 +75,15 @@ export class TelegramIntegration {
     allowedUsers: number[],
     agent: Agent,
     memory: Memory,
-    scheduler?: Scheduler
+    scheduler?: Scheduler,
+    voiceService?: VoiceService
   ) {
     this.bot = new TelegramBot(botToken, { polling: true });
     this.botToken = botToken;
     this.agent = agent;
     this.memory = memory;
     this.scheduler = scheduler;
+    this.voiceService = voiceService;
     this.allowedUsers = new Set(allowedUsers);
     this.media = new TelegramMediaService(this.bot, botToken);
     this.progressReporter = new TelegramProgressReporter(
@@ -783,6 +787,59 @@ export class TelegramIntegration {
 
         state.recentPhotos = [];
         await this.runAgent(chatId, userId, prompt);
+        break;
+      }
+
+      case "/call": {
+        if (!this.voiceService?.isAvailable()) {
+          await this.bot.sendMessage(
+            chatId,
+            "Voice calling is not configured. Set LIVEKIT_URL and LIVEKIT_SIP_TRUNK_ID in .env"
+          );
+          return;
+        }
+
+        if (!argText.trim()) {
+          await this.bot.sendMessage(
+            chatId,
+            "Usage: /call +61412345678 [context]\nExample: /call +61412345678 Remind about the meeting at 3pm"
+          );
+          return;
+        }
+
+        // Parse: first arg is phone number, rest is context
+        const callParts = argText.trim().split(/\s+/);
+        const phoneNumber = callParts[0];
+        const callContext = callParts.slice(1).join(" ") || undefined;
+
+        // Validate E.164 format
+        if (!/^\+\d{7,15}$/.test(phoneNumber)) {
+          await this.bot.sendMessage(
+            chatId,
+            "Phone number must be in E.164 format (e.g. +61412345678)"
+          );
+          return;
+        }
+
+        await this.bot.sendMessage(chatId, `Calling ${phoneNumber}...`);
+
+        try {
+          const result = await this.voiceService.makeCall({
+            phoneNumber,
+            context: callContext,
+            userId,
+          });
+
+          if (result.status === "failed") {
+            await this.bot.sendMessage(
+              chatId,
+              `Call failed: ${result.error ?? "unknown error"}`
+            );
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await this.bot.sendMessage(chatId, `Call failed: ${errMsg}`);
+        }
         break;
       }
 

@@ -28,6 +28,7 @@ export const TELEGRAM_COMMANDS: TelegramCommandHandler[] = [
   { name: "/memories", description: "List all facts" },
   { name: "/status", description: "Show bot status" },
   { name: "/post", description: "Create a Facebook post with recent photos" },
+  { name: "/call", description: "Make a voice call" },
 ];
 
 export function renderCommandHelp(): string {

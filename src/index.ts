@@ -9,6 +9,7 @@ import { ensureValidToken, startTokenRefreshTimer } from "./auth.js";
 import { SqliteStore } from "./persistence.js";
 import { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
+import type { VoiceService as VoiceServiceType } from "./voice.js";
 
 async function main(): Promise<void> {
   info("main", "Starting Axis Agent...");
@@ -47,13 +48,44 @@ async function main(): Promise<void> {
     jobs
   );
 
-  // Set up Telegram integration (with scheduler reference)
+  // Set up voice calling (optional — disabled if LIVEKIT_URL not set)
+  // Dynamic import to avoid crashing if native LiveKit bindings are missing
+  let voiceService: VoiceServiceType | undefined;
+  if (config.livekit) {
+    const { VoiceService } = await import("./voice.js");
+    voiceService = new VoiceService(config, memory, (callId, status, result) => {
+      if (primaryUser && telegram) {
+        const msg = status === "completed"
+          ? `Call ${callId} completed (${result?.durationSeconds ?? 0}s)`
+          : status === "failed"
+            ? `Call ${callId} failed: ${result?.error ?? "unknown"}`
+            : `Call ${callId}: ${status}`;
+        telegram
+          .sendNotification(primaryUser, msg)
+          .catch((err) => {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logError("voice", `Failed to send call notification: ${errMsg}`);
+          });
+      }
+    });
+    try {
+      await voiceService.start();
+      info("main", "Voice calling enabled");
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logError("main", `Voice service failed to start: ${errMsg}`);
+      voiceService = undefined;
+    }
+  }
+
+  // Set up Telegram integration (with scheduler and voice service)
   telegram = new TelegramIntegration(
     config.telegram.botToken,
     config.telegram.allowedUsers,
     agent,
     memory,
-    scheduler
+    scheduler,
+    voiceService
   );
 
   // Start Telegram bot
@@ -68,6 +100,7 @@ async function main(): Promise<void> {
     jobs,
     store,
     owntracksToken: config.owntracksToken,
+    voiceService,
     onInboundSms: (from, body) => {
       if (primaryUser && telegram) {
         telegram
@@ -92,6 +125,9 @@ async function main(): Promise<void> {
     clearInterval(tokenRefreshTimer);
     telegram.stop();
     scheduler.stopAll();
+    if (voiceService) {
+      voiceService.stop().catch(() => {});
+    }
     gateway.close().finally(() => process.exit(0));
   };
 

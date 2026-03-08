@@ -86,7 +86,7 @@ rsync -avz --delete \
   ./ "$REMOTE_HOST:$REMOTE_DIR/"
 
 echo "Installing dependencies on remote..."
-ssh -i "$SSH_KEY" "$REMOTE_HOST" "cd $REMOTE_DIR && npm install --omit=dev"
+ssh -i "$SSH_KEY" "$REMOTE_HOST" "cd $REMOTE_DIR && npm install --omit=dev && npm ls @livekit/rtc-node-linux-x64-gnu 2>/dev/null || npm install @livekit/rtc-node-linux-x64-gnu@0.13.24 --no-save 2>/dev/null || true"
 
 echo "Installing systemd service..."
 ssh -i "$SSH_KEY" "$REMOTE_HOST" "sudo cp $REMOTE_DIR/systemd/claude-agent.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable claude-agent && sudo systemctl restart claude-agent"

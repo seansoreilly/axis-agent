@@ -6,6 +6,7 @@ import { info } from "./logger.js";
 import type { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
 import type { SqliteStore } from "./persistence.js";
+import type { VoiceService } from "./voice.js";
 
 interface WebhookBody {
   prompt: string;
@@ -41,6 +42,11 @@ interface TwilioSmsBody {
   [key: string]: string | undefined;
 }
 
+interface CallBody {
+  phoneNumber: string;
+  context?: string;
+}
+
 interface GatewayOptions {
   port: number;
   agent: Agent;
@@ -49,6 +55,7 @@ interface GatewayOptions {
   jobs?: JobService;
   store?: SqliteStore;
   owntracksToken?: string;
+  voiceService?: VoiceService;
   onInboundSms?: (from: string, body: string) => void;
 }
 
@@ -132,6 +139,30 @@ export async function createGateway(
     }
     return { ok: true };
   });
+
+  // Voice calling endpoints (only if voice service is configured)
+  if (opts.voiceService) {
+    app.post<{ Body: CallBody }>("/calls", async (request, reply) => {
+      const { phoneNumber, context } = request.body;
+      if (!phoneNumber || typeof phoneNumber !== "string") {
+        return reply.status(400).send({ error: "phoneNumber is required" });
+      }
+      if (!/^\+\d{7,15}$/.test(phoneNumber)) {
+        return reply.status(400).send({ error: "phoneNumber must be E.164 format" });
+      }
+      if (!opts.voiceService!.isAvailable()) {
+        return reply.status(503).send({ error: "Voice service not available (SIP trunk not configured)" });
+      }
+      const result = await opts.voiceService!.makeCall({ phoneNumber, context });
+      return { callId: result.callId, status: result.status, error: result.error };
+    });
+
+    app.get("/calls/active", async () => ({
+      calls: opts.voiceService!.listActiveCalls(),
+    }));
+
+    info("gateway", "Voice calling endpoints enabled at /calls");
+  }
 
   app.get("/admin/status", async () => ({
     status: "ok",

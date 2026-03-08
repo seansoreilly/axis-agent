@@ -1,6 +1,6 @@
 {
   "name": "axis-agent",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Axis Agent — always-on AI agent powered by Claude Agent SDK with Telegram integration",
   "type": "module",
   "scripts": {
@@ -11,10 +11,13 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.69",
+    "@livekit/agents": "^1.0.48",
+    "@livekit/agents-plugin-silero": "^1.0.48",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "cron-parser": "^5.5.0",
     "fastify": "^5.2.0",
     "googleapis": "^171.4.0",
+    "livekit-server-sdk": "^2.15.0",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
     "sharp": "^0.34.5",

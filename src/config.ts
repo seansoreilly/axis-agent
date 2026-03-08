@@ -1,5 +1,13 @@
 import { existsSync, mkdirSync } from "node:fs";
 
+export interface LiveKitConfig {
+  url: string;
+  apiKey: string;
+  apiSecret: string;
+  sipTrunkId?: string;
+  ttsVoiceId?: string;
+}
+
 export interface Config {
   telegram: {
     botToken: string;
@@ -16,6 +24,7 @@ export interface Config {
   };
   memoryDir: string;
   owntracksToken?: string;
+  livekit?: LiveKitConfig;
 }
 
 function requireEnv(key: string): string {
@@ -50,6 +59,19 @@ export function loadConfig(): Config {
     );
   }
 
+  // LiveKit voice calling config (optional — feature disabled if LIVEKIT_URL not set)
+  let livekit: LiveKitConfig | undefined;
+  const livekitUrl = process.env["LIVEKIT_URL"];
+  if (livekitUrl) {
+    livekit = {
+      url: livekitUrl,
+      apiKey: requireEnv("LIVEKIT_API_KEY"),
+      apiSecret: requireEnv("LIVEKIT_API_SECRET"),
+      sipTrunkId: process.env["LIVEKIT_SIP_TRUNK_ID"],
+      ttsVoiceId: process.env["CARTESIA_VOICE_ID"],
+    };
+  }
+
   return {
     telegram: {
       botToken: requireEnv("TELEGRAM_BOT_TOKEN"),
@@ -66,5 +88,6 @@ export function loadConfig(): Config {
     },
     memoryDir,
     owntracksToken: process.env["OWNTRACKS_TOKEN"],
+    livekit,
   };
 }

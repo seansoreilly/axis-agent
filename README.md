@@ -91,6 +91,19 @@ For services not covered by Zapier or requiring deeper integration:
 - **Bitwarden** — add, update, or rotate secrets in the Bitwarden vault and sync to the server.
 - **Gmail** — fetch, evaluate, archive, and unsubscribe from emails via IMAP with incremental dual-UID watermark triage.
 
+#### Voice Calling (LiveKit)
+
+Outbound phone calls via LiveKit Cloud with real-time voice AI. The agent joins a LiveKit room, dials out via SIP trunk (Twilio), and has a two-way voice conversation using STT/LLM/TTS — all billed through the LiveKit account (no separate Deepgram/OpenAI/Cartesia API keys needed).
+
+- **LiveKit hosted inference** — model strings (`deepgram/nova-3`, `openai/gpt-4o-mini`, `cartesia/sonic-2`) instead of plugin instances
+- **Australian female voice** by default (Cartesia "Australian Woman")
+- **Telegram integration** — `/call +61412345678 [context]` to initiate calls
+- **HTTP API** — `POST /calls` with `{ "phoneNumber": "+61...", "context": "..." }`
+- **Call monitoring** — tracks active calls, auto-cleanup on room close, 10-minute safety timeout
+- **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations
+
+Requires: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_SIP_TRUNK_ID`. Optional: `CARTESIA_VOICE_ID`.
+
 #### Playwright MCP (Browser Automation)
 
 Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-mcp). Enables the agent to navigate JS-rendered pages, fill forms, click buttons, take screenshots, and generate PDFs — things WebFetch can't do. The agent automatically chooses WebFetch for static content and Playwright for dynamic/interactive pages.
@@ -261,6 +274,7 @@ DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh --self-heal
 | `/forget key` | Remove a fact |
 | `/memories` | List all facts |
 | `/status` | Show uptime, sessions, model, cost, tasks |
+| `/call +number [context]` | Make an outbound voice call via LiveKit |
 | `/post [notes]` | Create a Facebook post using recently uploaded photos |
 
 Any other message is sent to Claude as a prompt. Sessions persist — follow-up messages maintain conversation context.
@@ -274,6 +288,8 @@ Any other message is sent to Claude as a prompt. Sessions persist — follow-up 
 | `/tasks` | GET | List scheduled tasks |
 | `/tasks` | POST | Create scheduled task (`{ "id", "name", "schedule", "prompt" }`) |
 | `/tasks/:id` | DELETE | Remove scheduled task |
+| `/calls` | POST | Initiate outbound voice call (`{ "phoneNumber": "+61...", "context?": "..." }`) |
+| `/calls/active` | GET | List active voice calls |
 
 ## Secret Management
 
@@ -324,6 +340,8 @@ src/
   prompt-config.ts      # Prompt section definitions and defaults
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
+  voice.ts              # Voice calling service (LiveKit agent dispatch, room management)
+  voice-agent.ts        # LiveKit voice agent entry (STT/LLM/TTS pipeline, SIP dialing)
 scripts/
   sync-secrets.sh       # Fetch secrets from Bitwarden, push to server via SCP
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
