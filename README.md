@@ -92,8 +92,10 @@ Outbound phone calls via LiveKit Cloud with real-time voice AI. The agent joins 
 
 - **LiveKit hosted inference** — model strings (`deepgram/nova-3`, `openai/gpt-4o-mini`, `cartesia/sonic-2`) instead of plugin instances
 - **Australian female voice** by default (Cartesia "Australian Woman")
-- **Telegram integration** — `/call +61412345678 [context]` to initiate calls
+- **Agent-initiated calls** — the agent can decide to call someone based on conversation context (confirms with user first, looks up contacts automatically)
+- **Telegram integration** — `/call Sean [context]` or `/call +61412345678 [context]` — accepts contact names or phone numbers
 - **HTTP API** — `POST /calls` with `{ "phoneNumber": "+61...", "context": "..." }`
+- **Call transcripts** — captures both agent and caller speech during the call via `ConversationItemAdded` events, delivers the full transcript to Telegram when the call ends
 - **Call monitoring** — tracks active calls, auto-cleanup on room close, 10-minute safety timeout
 - **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations
 
@@ -269,7 +271,7 @@ DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh --self-heal
 | `/forget key` | Remove a fact |
 | `/memories` | List all facts |
 | `/status` | Show uptime, sessions, model, cost, tasks |
-| `/call +number [context]` | Make an outbound voice call via LiveKit |
+| `/call <name or +number> [context]` | Make an outbound voice call via LiveKit |
 | `/post [notes]` | Create a Facebook post using recently uploaded photos |
 
 Any other message is sent to Claude as a prompt. Sessions persist — follow-up messages maintain conversation context.
