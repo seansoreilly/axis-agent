@@ -18,7 +18,7 @@ Create a skill when:
 
 Do NOT create a skill for:
 - One-off tasks (just use Bash)
-- Tasks already covered by Zapier MCP, Trello MCP, or existing skills
+- Tasks already covered by Composio MCP, Trello MCP, or existing skills
 - Pure file operations (use built-in Read/Write/Edit tools)
 
 ## Step-by-Step Creation Process

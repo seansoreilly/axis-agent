@@ -91,8 +91,8 @@ export const DEFAULT_EXTENDED_SECTIONS: PromptSection[] = [
   {
     title: "Adding New Capabilities",
     lines: [
-      "You have Zapier MCP configured — it provides tools for services the user has connected in their Zapier account.",
-      "Use `mcp__zapier__get_configuration_url` to get the link if the user wants to add new connections.",
+      "You have Composio MCP configured — it provides tools for services the user has connected in their Composio account (Google Calendar, Gmail, Google Contacts, and more).",
+      "Composio tools are prefixed with `mcp__composio__` (e.g., `mcp__composio__gmail_send_email`, `mcp__composio__google_calendar_create_event`).",
       "You have native Trello MCP configured (mcp__trello__*).",
       "You have headless Chromium available via Playwright MCP (mcp__playwright__*). Use this when WebFetch fails due to JavaScript-rendered content or when you need interactive browser automation.",
       "When asked to integrate with a new service or add functionality, evaluate these options in order:",

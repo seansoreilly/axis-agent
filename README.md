@@ -65,14 +65,9 @@ The agent runs as a single Node.js process under systemd with security hardening
 
 ### Integrations
 
-#### Zapier MCP
+#### Composio MCP
 
-The agent uses [Zapier MCP](https://www.npmjs.com/package/@anthropic-ai/mcp-server-zapier) as an integration layer for third-party services. Zapier only exposes tools for actions that the user has explicitly connected and enabled in their Zapier account — the agent cannot access any service the user hasn't authorized.
-
-This provides two key benefits:
-
-1. **Ease of connection** — Adding a new integration is as simple as enabling an action in the Zapier dashboard. No custom code, credential plumbing, or skill development needed.
-2. **Security** — Instead of storing individual OAuth tokens and API credentials per service on the server, the agent authenticates through a single Zapier API key. Zapier handles OAuth flows, token refresh, and credential storage on its side, reducing the attack surface.
+The agent uses [Composio](https://composio.dev/) as a unified tool router for third-party services. Composio provides 1000+ integrations via a single HTTP-based MCP server — the agent authenticates through a single API key, and Composio handles OAuth flows, token refresh, and credential storage.
 
 Currently connected tools:
 - **Google Calendar** — find events, retrieve by ID, find busy periods, find/get calendars
@@ -85,7 +80,7 @@ Direct Trello API integration via a custom MCP server (`src/trello-mcp-server.ts
 
 #### Custom Skills
 
-For services not covered by Zapier or requiring deeper integration:
+For services not covered by Composio or requiring deeper integration:
 - **Facebook** — post text and photos to a Facebook Page via Graph API. Photos are auto-optimized before posting (EXIF rotation, exposure/saturation/contrast adjustment, saliency-based smart crop, sharpening). Use `/post` in Telegram after uploading photos.
 - **Twilio** — send SMS, make voice calls, and manage phone numbers (AU1 region).
 - **Bitwarden** — add, update, or rotate secrets in the Bitwarden vault and sync to the server.

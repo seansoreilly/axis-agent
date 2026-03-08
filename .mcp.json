@@ -1,8 +1,11 @@
 {
   "mcpServers": {
-    "zapier": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-zapier"]
+    "composio": {
+      "type": "http",
+      "url": "https://backend.composio.dev/mcp",
+      "headers": {
+        "x-api-key": "${COMPOSIO_API_KEY}"
+      }
     },
     "trello": {
       "command": "node",

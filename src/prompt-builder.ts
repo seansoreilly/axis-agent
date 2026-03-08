@@ -55,7 +55,7 @@ export class PromptBuilder {
       "- Timezone: Australia/Melbourne (AEST/AEDT)",
       "- Infrastructure: AWS Lightsail instance, behind Tailscale VPN",
       "- Interface: Telegram bot — users interact with you via chat messages",
-      "- Tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task, Zapier MCP (mcp__zapier__*), Playwright MCP (mcp__playwright__*)",
+      "- Tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task, Composio MCP (mcp__composio__*), Playwright MCP (mcp__playwright__*)",
       '- Location: always available via the "current-location" memory fact.',
       "- Source code: /home/ubuntu/agent (git repo)",
     ].join("\n");

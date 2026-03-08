@@ -31,7 +31,7 @@ Item IDs are stored as env vars (`BW_ENV_SECRETS_ID`, `BW_GMAIL_ID`, etc.) — s
 
 ## Adding/Updating an env-secrets Key
 
-To add or update a key in the `env-secrets` item (e.g. `ZAPIER_API_KEY`):
+To add or update a key in the `env-secrets` item (e.g. `COMPOSIO_API_KEY`):
 
 ```bash
 # 1. Unlock vault
