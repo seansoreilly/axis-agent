@@ -295,10 +295,10 @@ Secrets (API keys, tokens, credentials) are stored in [Bitwarden](https://bitwar
 2. Run the one-time migration: `bash scripts/migrate-secrets-to-bitwarden.sh`
 3. Sync secrets to server: `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)
 
-**Vault folder:** `claude-agent-lightsail` — contains Secure Notes for env secrets, Gmail, Facebook, and Google credentials.
+**Vault folder:** `claude-agent-lightsail` — each env secret is stored as an individual Secure Note (e.g. `telegram-bot-token`, `gh-token`). JSON credential files (Gmail, Facebook, Google) are stored as separate notes.
 
 **Workflows:**
-- **Rotate a secret:** Update in Bitwarden → `bash scripts/sync-secrets.sh`
+- **Rotate a secret:** Update the individual entry in Bitwarden → `bash scripts/sync-secrets.sh`
 - **Deploy with secrets:** `./deploy.sh --sync-secrets`
 - **Rollback:** `bash scripts/rollback-secrets.sh ~/.claude-agent-backup-<timestamp>`
 
@@ -338,8 +338,9 @@ src/
   voice.ts              # Voice calling service (LiveKit agent dispatch, room management)
   voice-agent.ts        # LiveKit voice agent entry (STT/LLM/TTS pipeline, SIP dialing)
 scripts/
-  sync-secrets.sh       # Fetch secrets from Bitwarden, push to server via SCP
+  sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
+  split-env-secrets.sh  # One-time migration: split env-secrets blob into individual entries
   rollback-secrets.sh   # Restore server secrets from local backup
   deploy-self.sh        # Self-deploy (runs on the server)
   health-check.sh       # Local health monitoring (Tailscale, AWS, SSH, service)

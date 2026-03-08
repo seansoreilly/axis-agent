@@ -25,6 +25,37 @@ SECRET_KEYS=(
   FACEBOOK_APP_SECRET
   FACEBOOK_PAGE_ID
   FACEBOOK_PAGE_TOKEN
+  COMPOSIO_API_KEY
+  TRELLO_API_KEY
+  TRELLO_API_TOKEN
+  OWNTRACKS_TOKEN
+  LIVEKIT_URL
+  LIVEKIT_API_KEY
+  LIVEKIT_API_SECRET
+  LIVEKIT_SIP_TRUNK_ID
+  CARTESIA_VOICE_ID
+)
+
+# Env var name → Bitwarden item name (kebab-case)
+declare -A NAME_MAP=(
+  [TELEGRAM_BOT_TOKEN]="telegram-bot-token"
+  [TELEGRAM_ALLOWED_USERS]="telegram-allowed-users"
+  [GH_TOKEN]="gh-token"
+  [ICAL_URL]="ical-url"
+  [GOOGLE_MAPS_API_KEY]="google-maps-api-key"
+  [FACEBOOK_APP_ID]="facebook-app-id"
+  [FACEBOOK_APP_SECRET]="facebook-app-secret"
+  [FACEBOOK_PAGE_ID]="facebook-page-id"
+  [FACEBOOK_PAGE_TOKEN]="facebook-page-token-env"
+  [COMPOSIO_API_KEY]="composio-api-key"
+  [TRELLO_API_KEY]="trello-api-key"
+  [TRELLO_API_TOKEN]="trello-api-token"
+  [OWNTRACKS_TOKEN]="owntracks-token"
+  [LIVEKIT_URL]="livekit-url"
+  [LIVEKIT_API_KEY]="livekit-api-key"
+  [LIVEKIT_API_SECRET]="livekit-api-secret"
+  [LIVEKIT_SIP_TRUNK_ID]="livekit-sip-trunk-id"
+  [CARTESIA_VOICE_ID]="cartesia-voice-id"
 )
 
 echo "==> Step 1: Backing up server secrets locally to $BACKUP_DIR"
@@ -105,11 +136,19 @@ create_note() {
   echo "  Created: '$item_name' (id: $ITEM_ID)"
 }
 
-# env-secrets
+# Individual env secret entries (one per key)
 if [ -n "$ENV_SECRETS" ]; then
-  create_note "env-secrets" "$ENV_SECRETS"
+  while IFS='=' read -r key value; do
+    [ -z "$key" ] && continue
+    bw_name="${NAME_MAP[$key]:-}"
+    if [ -z "$bw_name" ]; then
+      echo "  WARN: No mapping for '$key', skipping"
+      continue
+    fi
+    create_note "$bw_name" "$value"
+  done <<< "$ENV_SECRETS"
 else
-  echo "  SKIPPED: env-secrets (no secret env vars found)"
+  echo "  SKIPPED: env secrets (no secret env vars found)"
 fi
 
 # JSON credential files

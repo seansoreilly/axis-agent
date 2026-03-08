@@ -19,45 +19,75 @@ When the user invokes `/bitwarden`, help them add, update, or rotate secrets sto
 
 All secrets are in the `claude-agent-lightsail` Bitwarden folder. Each item is a Secure Note with content in the Notes field.
 
-| Item Name | Format | Server Destination |
-|---|---|---|
-| `env-secrets` | `KEY=value` pairs (one per line) | `/home/ubuntu/agent/.env` (merged) |
-| `gmail` | JSON | `/home/ubuntu/agent/gmail_app_password.json` |
-| `facebook` | JSON | `/home/ubuntu/.claude-agent/facebook-page-token.json` |
-| `google-service-account` | JSON | `/home/ubuntu/.claude-agent/google-service-account.json` |
-| `google-credentials` | JSON | `/home/ubuntu/.claude-agent/google-credentials.json` |
+**Env var secrets** — each stored as an individual secure note (raw value only, no `KEY=`):
 
-Item IDs are stored as env vars (`BW_ENV_SECRETS_ID`, `BW_GMAIL_ID`, etc.) — see `scripts/sync-secrets.sh`.
+| Item Name | Env Var |
+|---|---|
+| `telegram-bot-token` | `TELEGRAM_BOT_TOKEN` |
+| `telegram-allowed-users` | `TELEGRAM_ALLOWED_USERS` |
+| `gh-token` | `GH_TOKEN` |
+| `ical-url` | `ICAL_URL` |
+| `google-maps-api-key` | `GOOGLE_MAPS_API_KEY` |
+| `facebook-app-id` | `FACEBOOK_APP_ID` |
+| `facebook-app-secret` | `FACEBOOK_APP_SECRET` |
+| `facebook-page-id` | `FACEBOOK_PAGE_ID` |
+| `facebook-page-token-env` | `FACEBOOK_PAGE_TOKEN` |
+| `composio-api-key` | `COMPOSIO_API_KEY` |
+| `trello-api-key` | `TRELLO_API_KEY` |
+| `trello-api-token` | `TRELLO_API_TOKEN` |
+| `owntracks-token` | `OWNTRACKS_TOKEN` |
+| `livekit-url` | `LIVEKIT_URL` |
+| `livekit-api-key` | `LIVEKIT_API_KEY` |
+| `livekit-api-secret` | `LIVEKIT_API_SECRET` |
+| `livekit-sip-trunk-id` | `LIVEKIT_SIP_TRUNK_ID` |
+| `cartesia-voice-id` | `CARTESIA_VOICE_ID` |
 
-## Adding/Updating an env-secrets Key
+**JSON credential files** — fetched by item ID:
 
-To add or update a key in the `env-secrets` item (e.g. `COMPOSIO_API_KEY`):
+| Item Name | Server Destination |
+|---|---|
+| `gmail` | `/home/ubuntu/agent/gmail_app_password.json` |
+| `facebook` | `/home/ubuntu/.claude-agent/facebook-page-token.json` |
+| `google-service-account` | `/home/ubuntu/.claude-agent/google-service-account.json` |
+| `google-credentials` | `/home/ubuntu/.claude-agent/google-credentials.json` |
+| `claude-code-admin-key` | Not synced (local use only via `/claude-admin` skill) |
+
+JSON credential file IDs are stored as env vars (`BW_GMAIL_ID`, etc.) — see `scripts/sync-secrets.sh`.
+
+## Adding/Updating an Env Secret
+
+Each env secret is its own Bitwarden entry. To update one (e.g. `composio-api-key`):
 
 ```bash
 # 1. Unlock vault
 export BW_SESSION=$(bw unlock --raw)
 
-# 2. Get current content
-CURRENT=$(bw get notes "$BW_ENV_SECRETS_ID")
+# 2. Find the item
+ITEM=$(bw list items --search "composio-api-key" --folderid "<folder-id>" | jq '.[0]')
+ITEM_ID=$(echo "$ITEM" | jq -r '.id')
 
-# 3. Check if key already exists
-echo "$CURRENT" | grep "^KEY_NAME="
-
-# 4a. If key exists, replace it:
-UPDATED=$(echo "$CURRENT" | sed "s|^KEY_NAME=.*|KEY_NAME=new_value|")
-
-# 4b. If key is new, append it:
-UPDATED=$(printf '%s\nKEY_NAME=new_value' "$CURRENT")
-
-# 5. Update the vault item
-bw get item "$BW_ENV_SECRETS_ID" \
-  | jq --arg notes "$UPDATED" '.notes = $notes' \
+# 3. Update the value
+echo "$ITEM" | jq --arg notes "new_api_key_value" '.notes = $notes' \
   | bw encode \
-  | bw edit item "$BW_ENV_SECRETS_ID"
+  | bw edit item "$ITEM_ID"
 
-# 6. Lock vault
+# 4. Lock vault
 bw lock
 ```
+
+To add a new env secret:
+
+```bash
+# Create a new secure note in the folder
+ITEM_JSON=$(jq -n \
+  --arg name "new-secret-name" \
+  --arg notes "secret_value" \
+  --arg folderId "<folder-id>" \
+  '{type: 2, secureNote: {type: 0}, name: $name, notes: $notes, folderId: $folderId}')
+echo "$ITEM_JSON" | bw encode | bw create item
+```
+
+Then add the mapping to `SECRET_MAP` in `scripts/sync-secrets.sh`.
 
 ## Syncing to Server
 
@@ -73,7 +103,7 @@ Or as part of a deploy:
 ./deploy.sh --sync-secrets
 ```
 
-The sync script merges `env-secrets` into the server's `.env` (replacing existing keys, appending new ones) and SCPs JSON credential files directly.
+The sync script fetches all items in the folder, builds `KEY=VALUE` lines from individual entries, and merges them into the server's `.env`. JSON credential files are SCPed directly by item ID.
 
 ## Adding a New JSON Credential
 

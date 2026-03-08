@@ -35,3 +35,12 @@ Append entries below when a skill creation succeeds, fails, or requires correcti
 ### 2026-03-05 - general - lesson
 - **What happened**: Skill scripts handle credentials (API keys, tokens, auth secrets) that get loaded from JSON files or env vars.
 - **Lesson**: Before deploying any skill script, always audit for hardcoded secrets, debug logging that could leak credentials, or credential values that could end up in git. Check that credentials are loaded from external files/env vars only, never embedded in code.
+
+### 2026-03-08 - claude-admin - success
+- **What happened**: Created Claude Code Admin skill for Anthropic Admin API (org management, users, API keys, workspaces, invites).
+- **Lesson**: The Anthropic Admin API uses `sk-ant-admin...` keys (different from regular API keys). Base URL is `https://api.anthropic.com/v1/organizations/`. The Admin API covers org/user/key/workspace management but does NOT expose subscription billing (Claude Pro/Max/Team plans) — only API usage. New API keys can only be created via Console UI, not via API.
+
+### 2026-03-08 - bitwarden - lesson
+- **What happened**: Bitwarden CLI `bw unlock --raw` doesn't work with interactive input in Claude Code's bash tool. Each bash invocation is a separate process so BW_SESSION tokens don't persist.
+- **Fix applied**: Pass password directly to `bw unlock 'password' --raw` and chain all commands in a single bash call.
+- **Lesson**: For Bitwarden operations in Claude Code, always chain unlock + operations + lock in a single bash command. The session token won't persist across separate tool invocations. Ask user for master password via AskUserQuestion if needed.

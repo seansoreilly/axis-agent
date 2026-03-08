@@ -136,19 +136,36 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 
 | Vault Item | Server Destination |
 |---|---|
-| `env-secrets` | `/home/ubuntu/agent/.env` (merged with config vars) |
+| `telegram-bot-token` | `.env` → `TELEGRAM_BOT_TOKEN` |
+| `telegram-allowed-users` | `.env` → `TELEGRAM_ALLOWED_USERS` |
+| `gh-token` | `.env` → `GH_TOKEN` |
+| `ical-url` | `.env` → `ICAL_URL` |
+| `google-maps-api-key` | `.env` → `GOOGLE_MAPS_API_KEY` |
+| `facebook-app-id` | `.env` → `FACEBOOK_APP_ID` |
+| `facebook-app-secret` | `.env` → `FACEBOOK_APP_SECRET` |
+| `facebook-page-id` | `.env` → `FACEBOOK_PAGE_ID` |
+| `facebook-page-token-env` | `.env` → `FACEBOOK_PAGE_TOKEN` |
+| `composio-api-key` | `.env` → `COMPOSIO_API_KEY` |
+| `trello-api-key` | `.env` → `TRELLO_API_KEY` |
+| `trello-api-token` | `.env` → `TRELLO_API_TOKEN` |
+| `owntracks-token` | `.env` → `OWNTRACKS_TOKEN` |
+| `livekit-url` | `.env` → `LIVEKIT_URL` |
+| `livekit-api-key` | `.env` → `LIVEKIT_API_KEY` |
+| `livekit-api-secret` | `.env` → `LIVEKIT_API_SECRET` |
+| `livekit-sip-trunk-id` | `.env` → `LIVEKIT_SIP_TRUNK_ID` |
+| `cartesia-voice-id` | `.env` → `CARTESIA_VOICE_ID` |
 | `gmail` | `/home/ubuntu/agent/gmail_app_password.json` |
 | `facebook` | `/home/ubuntu/.claude-agent/facebook-page-token.json` |
 | `google-service-account` | `/home/ubuntu/.claude-agent/google-service-account.json` |
 | `google-credentials` | `/home/ubuntu/.claude-agent/google-credentials.json` |
 | `google-contacts-token` | `/home/ubuntu/.claude-agent/google-contacts-token.json` |
-| `env-secrets` (COMPOSIO_API_KEY) | `/home/ubuntu/agent/.env` (via EnvironmentFile, read by `.mcp.json` via `${COMPOSIO_API_KEY}`) |
-| `env-secrets` (TRELLO_API_KEY, TRELLO_API_TOKEN) | `/home/ubuntu/agent/.env` (via EnvironmentFile) |
 | `claude-oauth` | `/home/ubuntu/.claude/.credentials.json` (OAuth credentials) |
+| `claude-code-admin-key` | Admin API key (`sk-ant-admin...`) for org management (not synced to server) |
 
 **Workflows:**
 - **Sync secrets:** `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)
-- **Add/rotate a secret:** Update in Bitwarden vault → run sync
+- **Add/rotate a secret:** Update the individual entry in Bitwarden vault → run sync
+- **Split migration:** `bash scripts/split-env-secrets.sh` (one-time: splits old `env-secrets` blob into individual entries)
 - **Rollback:** `bash scripts/rollback-secrets.sh <backup-dir>` (backups created by migration script in `~/.claude-agent-backup-*`)
 - **New instance:** Install `bw` CLI locally, run `sync-secrets.sh` after placing config-only `.env` on server
 
