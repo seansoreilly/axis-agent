@@ -11,6 +11,24 @@ const CHECK_COMMAND_TIMEOUT_MS = 10_000;
 
 const MAX_TASKS = 20;
 const MIN_INTERVAL_SECONDS = 300; // 5 minutes
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 10_000; // 10 seconds between retries
+
+/** Patterns that indicate a transient/retryable API error */
+const TRANSIENT_ERROR_PATTERNS = [
+  /timed out/i,
+  /timeout/i,
+  /overloaded/i,
+  /rate limit/i,
+  /529/,
+  /503/,
+  /502/,
+  /500/,
+  /ECONNRESET/,
+  /ECONNREFUSED/,
+  /ETIMEDOUT/,
+  /socket hang up/i,
+];
 
 export interface ScheduledTask {
   id: string;
@@ -55,6 +73,14 @@ export class Scheduler {
   private store: SqliteStore;
   private running = false;
   private jobs?: JobService;
+
+  private static isTransientError(message: string): boolean {
+    return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  }
+
+  private static delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 
   constructor(agent: Agent, onResult?: TaskCallback, persistDir?: string, jobs?: JobService) {
     this.agent = agent;
@@ -146,28 +172,42 @@ export class Scheduler {
               info("scheduler", `Running task: ${task.name} (${task.id})`);
             }
 
-            if (this.jobs) {
-              const job = this.jobs.enqueuePromptJob({
-                prompt,
-                source: "scheduler",
-                metadata: { taskId: task.id, taskName: task.name },
-              });
-              const completed = await this.jobs.waitForCompletion(job.id);
-              const text = completed.resultText ?? completed.errorText ?? "Task completed.";
-              info("scheduler", `Task ${task.id} completed via job ${job.id}`);
-              this.onResult?.(task.id, text);
-            } else {
-              const result = await this.agent.run(prompt);
-              info(
-                "scheduler",
-                `Task ${task.id} completed in ${result.durationMs}ms`
-              );
-              this.onResult?.(task.id, result.text);
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                if (attempt > 0) {
+                  info("scheduler", `Retrying task ${task.id} (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+                  await Scheduler.delay(RETRY_DELAY_MS * attempt);
+                }
+
+                if (this.jobs) {
+                  const job = this.jobs.enqueuePromptJob({
+                    prompt,
+                    source: "scheduler",
+                    metadata: { taskId: task.id, taskName: task.name },
+                  });
+                  const completed = await this.jobs.waitForCompletion(job.id);
+                  const text = completed.resultText ?? completed.errorText ?? "Task completed.";
+                  info("scheduler", `Task ${task.id} completed via job ${job.id}`);
+                  this.onResult?.(task.id, text);
+                } else {
+                  const result = await this.agent.run(prompt);
+                  info(
+                    "scheduler",
+                    `Task ${task.id} completed in ${result.durationMs}ms`
+                  );
+                  this.onResult?.(task.id, result.text);
+                }
+                break; // success — exit retry loop
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                logError("scheduler", `Task ${task.id} attempt ${attempt + 1} failed: ${msg}`);
+                if (!Scheduler.isTransientError(msg) || attempt === MAX_RETRIES) {
+                  const retried = attempt > 0 ? ` (after ${attempt + 1} attempts)` : "";
+                  this.onResult?.(task.id, `Task failed${retried}: ${msg}`);
+                  break;
+                }
+              }
             }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            logError("scheduler", `Task ${task.id} failed: ${msg}`);
-            this.onResult?.(task.id, `Task failed: ${msg}`);
           } finally {
             this.running = false;
           }
