@@ -97,8 +97,12 @@ Outbound phone calls via Vapi REST API with real-time voice AI. Creates calls wi
 - **Call transcripts** — Vapi captures the full transcript, delivered to Telegram when the call ends
 - **Call monitoring** — tracks active calls via status polling, 10-minute safety timeout
 - **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations, with owner context (`OWNER_NAME` env var)
-- **DTMF support** — can navigate IVR menus during calls
+- **DTMF support** — can navigate IVR menus during calls with explicit keypad tool usage
 - **Natural conversation** — endCall tool for clean call termination, smart endpointing with punctuation-aware transcription for minimal response latency
+- **Voicemail detection** — Vapi-powered detection with automatic voicemail message and call termination
+- **IVR-aware mode** — separate turn-taking config for automated systems (patient endpointing, listen-first behavior) vs human calls (fast, casual)
+- **Backchannel handling** — acknowledgement phrases ("yeah", "uh-huh", "mm-hmm") ignored during interruption detection
+- **Hold/transfer support** — waits on hold, re-introduces when transferred to a new person
 
 Requires: `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_DTMF_TOOL_ID`. Optional: `CARTESIA_VOICE_ID`, `OWNER_NAME`.
 

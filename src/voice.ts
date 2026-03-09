@@ -213,6 +213,15 @@ export class VoiceService {
       silenceTimeoutSeconds: isIvr ? 45 : 30,
       maxDurationSeconds: 300,
       backgroundSound: "off",
+      voicemailDetection: {
+        provider: "vapi",
+        beepMaxAwaitSeconds: 12,
+        backoffPlan: {
+          maxRetries: 5,
+          startAtSeconds: 2,
+          frequencySeconds: 2.5,
+        },
+      },
       startSpeakingPlan: {
         waitSeconds: isIvr ? 1.5 : 0.2,
         smartEndpointingEnabled: !isIvr,
@@ -228,13 +237,17 @@ export class VoiceService {
               transcriptionEndpointingPlan: {
                 onPunctuationSeconds: 0.1,
                 onNoPunctuationSeconds: 0.8,
-                onNumberSeconds: 0.3,
+                onNumberSeconds: 0.7,
               },
             }),
       },
       stopSpeakingPlan: {
         numWords: isIvr ? 8 : 2,
         backoffSeconds: isIvr ? 3 : 1,
+        acknowledgementPhrases: [
+          "yeah", "uh-huh", "mm-hmm", "okay", "right",
+          "got it", "sure", "yep", "mhm",
+        ],
       },
     };
 
@@ -295,8 +308,10 @@ export class VoiceService {
         "- When asked your name, just say your name",
         "- When asked for a number, just say the number",
         "- When asked to describe your issue, give a brief 1-sentence summary",
-        "- When given menu options, listen to ALL options before choosing",
-        "- Use DTMF (keypad tones) when the system asks you to press a number",
+        "- When given menu options, listen to ALL options, then choose the best one",
+        "- When the system says 'press 1 for X, press 2 for Y', you MUST use the DTMF tool to press the key",
+        "- To press a key, call the DTMF tool with the digit (e.g. '1', '2', '3')",
+        "- If no menu option matches your purpose, press 0 for operator or say 'representative'",
         "- If asked to hold, stay silent and wait",
         "",
         "## Information to provide when asked",
@@ -311,6 +326,11 @@ export class VoiceService {
         "- Do NOT wait for their response after saying goodbye — call endCall right away",
         "- NEVER say goodbye more than once — one farewell + endCall, that's it",
         "- If transferred to hold music or silence for more than 10 seconds, stay on the line",
+        "",
+        "## If transferred to a human",
+        "- Re-introduce yourself briefly when the new person picks up",
+        "- State your purpose again concisely",
+        "- Answer their questions as you would in a normal call",
       );
     } else {
       parts.push(
@@ -349,6 +369,14 @@ export class VoiceService {
         "- Never say goodbye or thanks more than once",
         "- If they seem confused about who's calling, briefly explain you're an AI assistant calling on behalf of the owner",
         "- Never mention that you're an AI unless directly asked",
+        "",
+        "# If put on hold or transferred",
+        "- If put on hold, wait silently",
+        "- If transferred to someone new, re-introduce yourself and state your purpose briefly",
+        "",
+        "# If you reach voicemail",
+        `- Leave a brief message: "${ownerName || "Hi"} asked me to call. ${request.context ? "It's about: " + request.context.slice(0, 80) + "." : ""} Please call back when you can."`,
+        "- Then call endCall immediately",
       );
     }
 
