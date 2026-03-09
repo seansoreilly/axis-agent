@@ -174,15 +174,20 @@ export class VoiceService {
     }
   }
 
+  private isIvrCall(request: VoiceCallRequest): boolean {
+    const ctx = request.context?.toLowerCase() ?? "";
+    return ["ivr", "menu", "automated", "support", "demo", "hotline", "after-hours", "helpline", "switchboard", "test line", "voicemail", "phone tree", "press"].some(
+      (kw) => ctx.includes(kw)
+    );
+  }
+
   private buildCallBody(
     request: VoiceCallRequest,
     systemPrompt: string,
     firstMessage: string | undefined,
     voiceId: string
   ): Record<string, unknown> {
-    const isIvr = request.context?.toLowerCase().includes("ivr") ||
-      request.context?.toLowerCase().includes("menu") ||
-      request.context?.toLowerCase().includes("automated");
+    const isIvr = this.isIvrCall(request);
 
     const modelConfig = {
       provider: "openai",
@@ -194,28 +199,42 @@ export class VoiceService {
 
     const voiceConfig = { provider: "cartesia", voiceId };
 
+    // IVR calls: wait for the system to speak first, be patient with turn-taking
+    // Human calls: speak first, fast turn-taking
     const assistantConfig: Record<string, unknown> = {
-      firstMessageMode: firstMessage
-        ? "assistant-speaks-first"
-        : "assistant-speaks-first-with-model-generated-message",
-      ...(firstMessage ? { firstMessage } : {}),
+      firstMessageMode: isIvr
+        ? "assistant-waits-for-user"
+        : firstMessage
+          ? "assistant-speaks-first"
+          : "assistant-speaks-first-with-model-generated-message",
+      ...(firstMessage && !isIvr ? { firstMessage } : {}),
       model: modelConfig,
       voice: voiceConfig,
-      silenceTimeoutSeconds: isIvr ? 15 : 30,
+      silenceTimeoutSeconds: isIvr ? 45 : 30,
       maxDurationSeconds: 300,
       backgroundSound: "off",
       startSpeakingPlan: {
-        waitSeconds: 0.2,
-        smartEndpointingEnabled: true,
-        transcriptionEndpointingPlan: {
-          onPunctuationSeconds: 0.1,
-          onNoPunctuationSeconds: 0.8,
-          onNumberSeconds: 0.3,
-        },
+        waitSeconds: isIvr ? 1.5 : 0.2,
+        smartEndpointingEnabled: !isIvr,
+        ...(isIvr
+          ? {
+              transcriptionEndpointingPlan: {
+                onPunctuationSeconds: 2.0,
+                onNoPunctuationSeconds: 2.5,
+                onNumberSeconds: 1.5,
+              },
+            }
+          : {
+              transcriptionEndpointingPlan: {
+                onPunctuationSeconds: 0.1,
+                onNoPunctuationSeconds: 0.8,
+                onNumberSeconds: 0.3,
+              },
+            }),
       },
       stopSpeakingPlan: {
-        numWords: 2,
-        backoffSeconds: 1,
+        numWords: isIvr ? 8 : 2,
+        backoffSeconds: isIvr ? 3 : 1,
       },
     };
 
@@ -228,9 +247,11 @@ export class VoiceService {
   }
 
   private buildVoicePrompt(request: VoiceCallRequest): string {
+    const isIvr = this.isIvrCall(request);
     const parts: string[] = [];
 
-    if (this.soulMd) {
+    // Only inject SOUL.md for human calls — IVR calls need a focused, short prompt
+    if (this.soulMd && !isIvr) {
       parts.push(
         "# Personality",
         this.soulMd,
@@ -242,15 +263,9 @@ export class VoiceService {
 
     const ownerName = process.env["OWNER_NAME"] ?? "";
     parts.push(
-      "You are a personal AI assistant on a quick phone call.",
+      "You are a personal AI assistant on a phone call.",
       ownerName ? `You are calling on behalf of ${ownerName}.` : "",
       request.recipientName ? `You are calling ${request.recipientName}.` : "",
-      "",
-      "# Opening",
-      "Your FIRST message must combine a brief greeting with your question — do NOT greet and then wait.",
-      ownerName
-        ? `Example: "Hi ${request.recipientName ?? "there"}, calling on behalf of ${ownerName}. What time are you heading to the hospital?"`
-        : `Example: "Hi ${request.recipientName ?? "there"}. What time are you heading to the hospital?"`,
       ""
     );
 
@@ -265,27 +280,77 @@ export class VoiceService {
       parts.push("# Known Facts About the User", coreContext, "");
     }
 
-    parts.push(
-      "# How to talk",
-      "- Be casual and quick, like texting but out loud",
-      "- One sentence per turn, two max",
-      "- Use words like gotcha, cool, right, sounds good",
-      "- Match their energy",
-      "",
-      "# Flow",
-      "1. Ask the question right away",
-      "2. When they answer, confirm AND say bye in the SAME response, then immediately call endCall",
-      '3. Example good response: "Gotcha, 3pm. Thanks, bye!" [endCall]',
-      "4. Do NOT confirm in one message and then say goodbye in a separate message",
-      "",
-      "# Rules",
-      "- Never ask 'how are you'",
-      "- Never say goodbye or thanks more than once",
-      "- Always combine your farewell with the endCall in ONE turn — no separate goodbye turn",
-      "- If they say bye first, just respond with a quick bye and endCall immediately",
-      "- If they seem confused about who's calling, briefly explain you're an AI assistant calling on behalf of the owner",
-      "- Never mention that you're an AI unless directly asked"
-    );
+    if (isIvr) {
+      parts.push(
+        "# IVR / Automated System Rules",
+        "You are calling an automated phone system or support line.",
+        "",
+        "## Critical: LISTEN FIRST",
+        "- Wait for the system to finish speaking before you respond",
+        "- Do NOT speak over the system — let it complete its full message",
+        "- Do NOT dump all your information at once",
+        "- Answer ONLY what is asked, one question at a time",
+        "",
+        "## How to interact",
+        "- When asked your name, just say your name",
+        "- When asked for a number, just say the number",
+        "- When asked to describe your issue, give a brief 1-sentence summary",
+        "- When given menu options, listen to ALL options before choosing",
+        "- Use DTMF (keypad tones) when the system asks you to press a number",
+        "- If asked to hold, stay silent and wait",
+        "",
+        "## Information to provide when asked",
+        ownerName ? `- Name: ${ownerName}` : "",
+        "- Give details from the Call Purpose section above when relevant",
+        "- For callback number, use the Known Facts if available, otherwise make up a plausible one",
+        "- Make up reasonable placeholder details if asked for something not in the context (e.g. account number)",
+        "",
+        "## Ending",
+        "- When the system says goodbye or the interaction is complete, say a SINGLE quick goodbye and call endCall IMMEDIATELY in the SAME turn",
+        '- Example: "Thanks, goodbye!" → endCall',
+        "- Do NOT wait for their response after saying goodbye — call endCall right away",
+        "- NEVER say goodbye more than once — one farewell + endCall, that's it",
+        "- If transferred to hold music or silence for more than 10 seconds, stay on the line",
+      );
+    } else {
+      parts.push(
+        "# Opening",
+        "Your FIRST message must combine a brief greeting with your question — do NOT greet and then wait.",
+        ownerName
+          ? `Example: "Hi ${request.recipientName ?? "there"}, calling on behalf of ${ownerName}. What time are you heading to the hospital?"`
+          : `Example: "Hi ${request.recipientName ?? "there"}. What time are you heading to the hospital?"`,
+        "",
+        "# How to talk",
+        "- Be casual and quick, like texting but out loud",
+        "- One sentence per turn, two max",
+        "- Use words like gotcha, cool, right, sounds good",
+        "- Match their energy",
+        "",
+        "# Flow",
+        "1. Ask the question right away",
+        "2. When they answer, respond with EXACTLY this pattern: '[confirm their answer], thanks, bye!' then call endCall",
+        "",
+        "## Response template (FOLLOW THIS EXACTLY):",
+        '- They say "7:30" → You say: "Gotcha, 7:30. Thanks, bye!" → endCall',
+        '- They say "Tuesday" → You say: "Cool, Tuesday. Thanks, bye!" → endCall',
+        '- They say "yes" → You say: "Great, sounds good. Thanks, bye!" → endCall',
+        '- They say "at the park" → You say: "Right, the park. Thanks, bye!" → endCall',
+        "",
+        "WRONG (never do this):",
+        '- Just saying "Goodbye" without confirming their answer',
+        '- Saying "OK" then waiting, then saying "bye" in a separate turn',
+        "",
+        "# Ending the call",
+        "- ALWAYS call the endCall tool immediately after your farewell — same turn, no delay",
+        "- If they say bye first, respond with a quick bye AND call endCall",
+        "",
+        "# Rules",
+        "- Never ask 'how are you'",
+        "- Never say goodbye or thanks more than once",
+        "- If they seem confused about who's calling, briefly explain you're an AI assistant calling on behalf of the owner",
+        "- Never mention that you're an AI unless directly asked",
+      );
+    }
 
     return parts.join("\n");
   }
