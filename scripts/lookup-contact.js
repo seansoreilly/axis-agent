@@ -57,7 +57,7 @@ const people = google.people({ version: "v1", auth: oauth2 });
 try {
   const res = await people.people.searchContacts({
     query: name,
-    readMask: "names,phoneNumbers,emailAddresses",
+    readMask: "names,phoneNumbers,emailAddresses,metadata",
     pageSize: 5,
   });
 
@@ -72,9 +72,18 @@ try {
     const person = r.person || {};
     const displayName =
       person.names?.[0]?.displayName || "Unknown";
-    const phones = (person.phoneNumbers || []).map((p) => p.value);
-    const emails = (person.emailAddresses || []).map((e) => e.value);
-    return { name: displayName, phones, emails };
+    const phones = (person.phoneNumbers || []).map((p) => ({
+      number: p.value,
+      type: p.type || null,
+      updatedAt: p.metadata?.source?.updateTime || null,
+    }));
+    const emails = (person.emailAddresses || []).map((e) => ({
+      email: e.value,
+      type: e.type || null,
+      updatedAt: e.metadata?.source?.updateTime || null,
+    }));
+    const contactUpdatedAt = person.metadata?.sources?.[0]?.updateTime || null;
+    return { name: displayName, phones, emails, updatedAt: contactUpdatedAt };
   });
 
   // Single match — flat output for easy parsing
