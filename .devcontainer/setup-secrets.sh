@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Inject secrets from Bitwarden vault into the local Codespace environment.
+# Run manually after Codespace opens: bash .devcontainer/setup-secrets.sh
+# Idempotent — safe to re-run.
+set -euo pipefail
+
+FOLDER_NAME="claude-agent-lightsail"
+CLAUDE_AGENT_DIR="${CLAUDE_AGENT_DIR:-/workspaces/claude-code-agent/.claude-agent}"
+CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
+
+# Env var name -> Bitwarden item name
+declare -A SECRET_MAP=(
+  [TELEGRAM_BOT_TOKEN]="telegram-bot-token"
+  [TELEGRAM_ALLOWED_USERS]="telegram-allowed-users"
+  [GH_TOKEN]="gh-token"
+  [ICAL_URL]="ical-url"
+  [GOOGLE_MAPS_API_KEY]="google-maps-api-key"
+  [FACEBOOK_APP_ID]="facebook-app-id"
+  [FACEBOOK_APP_SECRET]="facebook-app-secret"
+  [FACEBOOK_PAGE_ID]="facebook-page-id"
+  [FACEBOOK_PAGE_TOKEN]="facebook-page-token-env"
+  [COMPOSIO_API_KEY]="composio-api-key"
+  [TRELLO_API_KEY]="trello-api-key"
+  [TRELLO_API_TOKEN]="trello-api-token"
+  [OWNTRACKS_TOKEN]="owntracks-token"
+  [VAPI_API_KEY]="vapi-api-key"
+  [VAPI_PHONE_NUMBER_ID]="vapi-phone-number-id"
+  [CARTESIA_VOICE_ID]="cartesia-voice-id"
+)
+
+# JSON credential file mappings: BW item ID env var -> local path + label
+declare -A JSON_CREDS=(
+  [BW_GMAIL_ID]="./gmail_app_password.json|gmail"
+  [BW_FACEBOOK_ID]="${CLAUDE_AGENT_DIR}/facebook-page-token.json|facebook"
+  [BW_GOOGLE_SA_ID]="${CLAUDE_AGENT_DIR}/google-service-account.json|google-service-account"
+  [BW_GOOGLE_CREDS_ID]="${CLAUDE_AGENT_DIR}/google-credentials.json|google-credentials"
+)
+
+# Optional JSON credentials
+declare -A JSON_CREDS_OPTIONAL=(
+  [BW_GOOGLE_CONTACTS_TOKEN_ID]="${CLAUDE_AGENT_DIR}/google-contacts-token.json|google-contacts-token"
+  [BW_CLAUDE_OAUTH_ID]="${CLAUDE_DIR}/.credentials.json|claude-oauth"
+)
+
+# --- Bitwarden authentication ---
+echo "=== Bitwarden Secret Injection ==="
+
+if [ -z "${BW_SESSION:-}" ]; then
+  if ! bw login --check &>/dev/null; then
+    echo "Logging in to Bitwarden..."
+    export BW_SESSION=$(bw login --raw)
+  else
+    echo "Unlocking Bitwarden vault..."
+    export BW_SESSION=$(bw unlock --raw)
+  fi
+fi
+bw sync
+
+# Find the folder
+FOLDER_ID=$(bw list folders --search "$FOLDER_NAME" | jq -r ".[] | select(.name==\"$FOLDER_NAME\") | .id")
+if [ -z "$FOLDER_ID" ]; then
+  echo "ERROR: Folder '$FOLDER_NAME' not found in vault." >&2
+  exit 1
+fi
+
+# Fetch all items in the folder once
+echo "Fetching items from '$FOLDER_NAME'..."
+FOLDER_ITEMS=$(bw list items --folderid "$FOLDER_ID")
+
+# --- Env secrets ---
+echo "Injecting env secrets into .env..."
+ENV_SECRETS=""
+MISSING=()
+
+for env_var in "${!SECRET_MAP[@]}"; do
+  bw_name="${SECRET_MAP[$env_var]}"
+  value=$(echo "$FOLDER_ITEMS" | jq -r ".[] | select(.name==\"$bw_name\") | .notes" 2>/dev/null || true)
+  if [ -z "$value" ] || [ "$value" = "null" ]; then
+    MISSING+=("$env_var ($bw_name)")
+    continue
+  fi
+  ENV_SECRETS="${ENV_SECRETS}${env_var}=${value}\n"
+done
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+  echo "  WARN: Missing vault entries:"
+  for m in "${MISSING[@]}"; do
+    echo "    - $m"
+  done
+fi
+
+if [ -n "$ENV_SECRETS" ]; then
+  # Strip existing secret lines from .env
+  SED_EXPR=""
+  for env_var in "${!SECRET_MAP[@]}"; do
+    SED_EXPR="${SED_EXPR}/^${env_var}=/d;"
+  done
+  if [ -n "$SED_EXPR" ]; then
+    sed -i "${SED_EXPR}" .env
+  fi
+
+  # Append fresh secrets
+  echo -e "$ENV_SECRETS" >> .env
+  chmod 600 .env
+  echo "  -> Env secrets merged into .env"
+else
+  echo "  WARN: No env secrets found in vault"
+fi
+
+# --- JSON credential files ---
+echo "Injecting JSON credential files..."
+
+mkdir -p "$CLAUDE_AGENT_DIR" "$CLAUDE_DIR"
+
+write_json_cred() {
+  local id_var="$1" path_label="$2"
+  local item_id="${!id_var:-}"
+  local path="${path_label%%|*}"
+  local label="${path_label##*|}"
+
+  if [ -z "$item_id" ]; then
+    echo "  SKIP: $id_var not set ($label)"
+    return
+  fi
+
+  local content
+  content=$(bw get notes "$item_id")
+  if [ -z "$content" ]; then
+    echo "  WARN: '$label' is empty in vault, skipping"
+    return
+  fi
+
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' "$content" > "$path"
+  chmod 600 "$path"
+  echo "  -> $label -> $path"
+}
+
+for id_var in "${!JSON_CREDS[@]}"; do
+  write_json_cred "$id_var" "${JSON_CREDS[$id_var]}"
+done
+
+for id_var in "${!JSON_CREDS_OPTIONAL[@]}"; do
+  write_json_cred "$id_var" "${JSON_CREDS_OPTIONAL[$id_var]}"
+done
+
+# --- Cleanup ---
+bw lock
+echo ""
+echo "Done. Vault locked."
+echo "Secrets injected. You can now run: npm run dev"

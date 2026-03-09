@@ -171,6 +171,13 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 
 General config (PORT, CLAUDE_MODEL, etc.) stays in `.env` on the server and is not managed by Bitwarden. See `.env.example` for the split.
 
+**Codespaces / devcontainer:**
+- `postCreateCommand` runs `.devcontainer/post-create.sh` automatically — installs `bw` CLI, `npm install`, generates config-only `.env` with Codespace paths
+- After Codespace opens, run `bash .devcontainer/setup-secrets.sh` to inject secrets from Bitwarden (interactive login required)
+- JSON credential files are written to `./` and `~/.claude-agent/` (Codespace-local paths, not server paths)
+- Idempotent — safe to re-run `setup-secrets.sh` after vault changes
+- Requires `BW_GMAIL_ID`, `BW_FACEBOOK_ID`, `BW_GOOGLE_SA_ID`, `BW_GOOGLE_CREDS_ID` env vars for JSON credentials (same as `sync-secrets.sh`)
+
 ## Versioning
 
 This project uses [semver](https://semver.org/) with `npm version` and GitHub Releases.
