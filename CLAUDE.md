@@ -161,6 +161,7 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 | `google-contacts-token` | `/home/ubuntu/.claude-agent/google-contacts-token.json` |
 | `claude-oauth` | `/home/ubuntu/.claude/.credentials.json` (OAuth credentials) |
 | `claude-code-admin-key` | Admin API key (`sk-ant-admin...`) for org management (not synced to server) |
+| `lightsail-ssh-key` | `~/.ssh/claude-code-agent-key.pem` (deploy SSH key, Codespaces only) |
 
 **Workflows:**
 - **Sync secrets:** `bash scripts/sync-secrets.sh` (or `./deploy.sh --sync-secrets`)

@@ -42,6 +42,10 @@ declare -A JSON_CREDS_OPTIONAL=(
   [BW_CLAUDE_OAUTH_ID]="${CLAUDE_DIR}/.credentials.json|claude-oauth"
 )
 
+# SSH key for deployment (looked up by name in vault, not by ID)
+SSH_KEY_BW_NAME="lightsail-ssh-key"
+SSH_KEY_PATH="$HOME/.ssh/claude-code-agent-key.pem"
+
 # --- Bitwarden authentication ---
 echo "=== Bitwarden Secret Injection ==="
 
@@ -144,8 +148,27 @@ for id_var in "${!JSON_CREDS_OPTIONAL[@]}"; do
   write_json_cred "$id_var" "${JSON_CREDS_OPTIONAL[$id_var]}"
 done
 
+# --- SSH key for deployment ---
+echo "Injecting SSH deploy key..."
+SSH_KEY_CONTENT=$(echo "$FOLDER_ITEMS" | jq -r ".[] | select(.name==\"$SSH_KEY_BW_NAME\") | .notes" 2>/dev/null || true)
+if [ -n "$SSH_KEY_CONTENT" ] && [ "$SSH_KEY_CONTENT" != "null" ]; then
+  mkdir -p "$(dirname "$SSH_KEY_PATH")"
+  printf '%s\n' "$SSH_KEY_CONTENT" > "$SSH_KEY_PATH"
+  chmod 600 "$SSH_KEY_PATH"
+  echo "  -> SSH key -> $SSH_KEY_PATH"
+else
+  echo "  WARN: '$SSH_KEY_BW_NAME' not found in vault, skipping SSH key"
+fi
+
+# Add DEPLOY_HOST to .env if not already present
+if ! grep -q '^DEPLOY_HOST=' .env 2>/dev/null; then
+  echo "DEPLOY_HOST=ubuntu@54.66.167.208" >> .env
+  echo "  -> DEPLOY_HOST added to .env"
+fi
+
 # --- Cleanup ---
 bw lock
 echo ""
 echo "Done. Vault locked."
 echo "Secrets injected. You can now run: npm run dev"
+echo "To deploy: ./deploy.sh"
