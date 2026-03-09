@@ -74,6 +74,8 @@ If no README updates are needed, skip this step.
 
 ## Step 7: Verify agent instance repo
 
+**Skip this step if `DEPLOY_HOST` is not set or `~/.ssh/claude-code-agent-key.pem` does not exist** (e.g. in Codespaces). Do not warn the user — just silently skip.
+
 After the local repo is committed and pushed, check the agent repo on the deployed instance:
 
 ```bash
