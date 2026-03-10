@@ -95,8 +95,8 @@ PrivateDevices=false  # Chromium needs /dev/shm
 
 The agent's system prompt includes a decision framework for adding new integrations. When the agent needs a new capability, it evaluates options in priority order:
 
-1. **Composio MCP** — Pre-configured via `.mcp.json`. Provides tools across Google Calendar, Gmail, and Google Contacts. Primary integration for Google services.
-2. **MCP server** — SDK-native tool provider. Config in `.mcp.json` (auto-loaded from cwd). Best option when one exists.
+1. **Google Workspace CLI (`gws`)** — Primary tool for ALL Google services (Gmail, Calendar, Contacts, Drive, Sheets, Docs). Uses OAuth token at `~/.config/gws/credentials.json`. Do NOT use Composio for Google operations.
+2. **MCP server** — SDK-native tool provider. Config in `.mcp.json` (auto-loaded from cwd). Composio MCP (`mcp__composio__*`) is available for non-Google third-party integrations.
 3. **Community skill** — Pre-built `.claude/skills/` package. Must support headless auth (no OAuth browser flows).
 4. **Custom skill** — Hand-built in `.claude/skills/<name>/` with `SKILL.md`. Use existing facebook/twilio skills as templates. The `skill-generator` meta-skill (`.claude/skills/skill-generator/SKILL.md`) provides a structured template and validation checklist for creating new skills. Past learnings are logged in `LEARNINGS.md`.
 5. **One-off Bash** — For simple, non-recurring tasks.
@@ -107,7 +107,7 @@ Key constraint: the agent runs headless under systemd, so only API keys / app pa
 
 Configured in `.mcp.json` (auto-loaded by the SDK from cwd):
 
-- **Composio** (URL-based, `backend.composio.dev/mcp`) — unified tool router for Google Calendar, Gmail, Google Contacts, and 1000+ other integrations. Uses HTTP transport with `x-api-key` header. Requires `COMPOSIO_API_KEY`.
+- **Composio** (URL-based, `backend.composio.dev/mcp`) — unified tool router for non-Google third-party integrations (1000+ services). Google services should use `gws` CLI instead. Uses HTTP transport with `x-api-key` header. Requires `COMPOSIO_API_KEY`.
 - **Trello** (`src/trello-mcp-server.ts`) — custom native MCP server for Trello board/card/checklist management. Runs from `dist/trello-mcp-server.js` (must `npm run build` first). Requires `TRELLO_API_KEY`, `TRELLO_API_TOKEN`. Uses `zod` for input validation (available via `@modelcontextprotocol/sdk`, not a direct dependency).
 - **Playwright** (`@playwright/mcp`) — headless Chromium browser automation (screenshots, form filling, navigation). Viewport: 1280x720. `PrivateDevices=false` required in systemd unit for `/dev/shm` access.
 
