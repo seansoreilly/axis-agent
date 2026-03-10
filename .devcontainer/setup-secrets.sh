@@ -187,6 +187,7 @@ GWS_CONFIG_DIR="$HOME/.config/gws"
 GWS_TOKEN_CONTENT=$(echo "$FOLDER_ITEMS" | jq -r ".[] | select(.name==\"$GWS_TOKEN_BW_NAME\") | .notes" 2>/dev/null || true)
 if [ -n "$GWS_TOKEN_CONTENT" ] && [ "$GWS_TOKEN_CONTENT" != "null" ]; then
   mkdir -p "$GWS_CONFIG_DIR"
+  rm -f "$GWS_CONFIG_DIR/token_cache.json"
   # Write credentials.json for gws CLI
   printf '%s\n' "$GWS_TOKEN_CONTENT" > "$GWS_CONFIG_DIR/credentials.json"
   chmod 600 "$GWS_CONFIG_DIR/credentials.json"

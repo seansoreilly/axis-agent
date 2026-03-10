@@ -86,6 +86,7 @@ if ! grep -q "alias claudy=" "$BASHRC" 2>/dev/null; then
   echo "" >> "$BASHRC"
   echo "# Claude Code aliases (added by devcontainer setup)" >> "$BASHRC"
   echo "alias claudy='claude --dangerously-skip-permissions'" >> "$BASHRC"
+  echo "export GWS_TOKEN_CACHE_ENCRYPTION=false" >> "$BASHRC"
   echo " ✅ Added alias: claudy -> claude --dangerously-skip-permissions"
 else
   echo " ✅ Alias claudy already exists in .bashrc"
