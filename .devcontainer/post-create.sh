@@ -125,10 +125,35 @@ fi
 TMUXEOF
 chmod +x .devcontainer/start-tmux.sh
 
+# --- Configure Tailscale SSH proxy ---
+# Tailscale in containers uses userspace networking, so direct TCP doesn't work.
+# We use `tailscale nc` as an SSH ProxyCommand to route through DERP relay.
+echo ""
+echo "=== Configuring Tailscale SSH proxy ==="
+mkdir -p "$HOME/.ssh"
+if ! grep -q "Host claude-code-agent" "$HOME/.ssh/config" 2>/dev/null; then
+  cat >> "$HOME/.ssh/config" << 'SSHEOF'
+
+Host claude-code-agent
+  HostName claude-code-agent
+  User ubuntu
+  IdentityFile ~/.ssh/claude-code-agent-key.pem
+  ProxyCommand sudo tailscale nc %h %p
+  StrictHostKeyChecking accept-new
+SSHEOF
+  chmod 600 "$HOME/.ssh/config"
+  echo " ✅ SSH config for Tailscale proxy added"
+else
+  echo " ✅ SSH config for claude-code-agent already exists"
+fi
+
 echo ""
 echo "=== Setup complete ==="
-echo "To inject secrets from Bitwarden, run:"
-echo "  bash .devcontainer/setup-secrets.sh"
+echo "Next steps:"
+echo "  1. bash .devcontainer/setup-secrets.sh   — inject secrets from Bitwarden"
+echo "  2. sudo tailscaled --tun=userspace-networking &  — start Tailscale daemon"
+echo "  3. sudo tailscale up                     — authenticate to tailnet"
+echo "  4. ./deploy.sh                           — deploy to instance"
 echo ""
 echo "To start a tmux session with Claude Code + dev server:"
 echo "  bash .devcontainer/start-tmux.sh"

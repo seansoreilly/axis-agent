@@ -16,6 +16,7 @@
   },
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/axelerant/devcontainer-features/bitwarden-cli:1": {}
+    "ghcr.io/axelerant/devcontainer-features/bitwarden-cli:1": {},
+    "ghcr.io/tailscale/codespace/tailscale:1": {}
   }
 }
