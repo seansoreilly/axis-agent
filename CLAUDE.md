@@ -186,6 +186,7 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 | `google-credentials` | `/home/ubuntu/.claude-agent/google-credentials.json` |
 | `google-contacts-token` | `/home/ubuntu/.claude-agent/google-contacts-token.json` |
 | `claude-oauth` | `/home/ubuntu/.claude/.credentials.json` (OAuth credentials) |
+| `gws-oauth-token` | `~/.config/gws/credentials.json` (OAuth token for Google Workspace CLI, Codespaces only) |
 | `claude-code-admin-key` | Admin API key (`sk-ant-admin...`) for org management (not synced to server) |
 | `lightsail-ssh-key` | `~/.ssh/claude-code-agent-key.pem` (deploy SSH key, Codespaces only) |
 

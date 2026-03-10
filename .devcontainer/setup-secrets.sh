@@ -180,6 +180,38 @@ else
   echo "  WARN: '$SSH_KEY_BW_NAME' not found in vault, skipping SSH key"
 fi
 
+# --- Google Workspace CLI (gws) OAuth token ---
+echo "Injecting gws OAuth token..."
+GWS_TOKEN_BW_NAME="gws-oauth-token"
+GWS_CONFIG_DIR="$HOME/.config/gws"
+GWS_TOKEN_CONTENT=$(echo "$FOLDER_ITEMS" | jq -r ".[] | select(.name==\"$GWS_TOKEN_BW_NAME\") | .notes" 2>/dev/null || true)
+if [ -n "$GWS_TOKEN_CONTENT" ] && [ "$GWS_TOKEN_CONTENT" != "null" ]; then
+  mkdir -p "$GWS_CONFIG_DIR"
+  # Write credentials.json for gws CLI
+  printf '%s\n' "$GWS_TOKEN_CONTENT" > "$GWS_CONFIG_DIR/credentials.json"
+  chmod 600 "$GWS_CONFIG_DIR/credentials.json"
+  # Also write client_secret.json from the same OAuth client config
+  CLIENT_ID=$(echo "$GWS_TOKEN_CONTENT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('client_id',''))" 2>/dev/null || true)
+  CLIENT_SECRET=$(echo "$GWS_TOKEN_CONTENT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('client_secret',''))" 2>/dev/null || true)
+  if [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ]; then
+    python3 -c "
+import json
+cs = {'installed': {
+    'client_id': '$CLIENT_ID',
+    'client_secret': '$CLIENT_SECRET',
+    'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+    'token_uri': 'https://oauth2.googleapis.com/token',
+    'redirect_uris': ['http://localhost']
+}}
+json.dump(cs, open('$GWS_CONFIG_DIR/client_secret.json', 'w'), indent=2)
+"
+    chmod 600 "$GWS_CONFIG_DIR/client_secret.json"
+  fi
+  echo "  -> gws OAuth token -> $GWS_CONFIG_DIR/credentials.json"
+else
+  echo "  WARN: '$GWS_TOKEN_BW_NAME' not found in vault, skipping gws token"
+fi
+
 # Add DEPLOY_HOST to .env if not already present
 if ! grep -q '^DEPLOY_HOST=' .env 2>/dev/null; then
   echo "DEPLOY_HOST=ubuntu@54.66.167.208" >> .env
