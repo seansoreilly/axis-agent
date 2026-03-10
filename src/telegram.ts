@@ -53,6 +53,7 @@ interface UserState {
   tempFiles: string[];
   currentLocation?: UserLocation;
   messageQueue: Array<{ chatId: number; text: string }>;
+  currentTaskStartMs?: number;
 }
 
 export class TelegramIntegration {
@@ -268,9 +269,17 @@ export class TelegramIntegration {
       const state = this.getState(userId);
       state.messageQueue.push({ chatId, text });
       const pos = state.messageQueue.length;
+      const elapsed = state.currentTaskStartMs
+        ? this.formatElapsed(state.currentTaskStartMs)
+        : "?";
+      const currentPrompt = state.lastPrompt
+        ? state.lastPrompt.slice(0, 80) + (state.lastPrompt.length > 80 ? "..." : "")
+        : "unknown";
       await this.bot.sendMessage(
         chatId,
-        `Queued (${pos} pending). I'll process it when the current request finishes.`
+        `⏳ Currently working on: "${currentPrompt}"\n` +
+          `Elapsed: ${elapsed}\n\n` +
+          `Your message is queued (${pos} pending). I'll get to it next.`
       );
       return;
     }
@@ -282,6 +291,7 @@ export class TelegramIntegration {
     this.processingUsers.add(userId);
     metrics.setGauge("telegram.processing_users", this.processingUsers.size);
     const startTime = Date.now();
+    state.currentTaskStartMs = startTime;
     const abortController = new AbortController();
     state.abortController = abortController;
 
@@ -351,6 +361,7 @@ export class TelegramIntegration {
       this.processingUsers.delete(userId);
       metrics.setGauge("telegram.processing_users", this.processingUsers.size);
       state.abortController = undefined;
+      state.currentTaskStartMs = undefined;
 
       // Clean up temp files (photos, voice messages)
       for (const tmpPath of state.tempFiles) {

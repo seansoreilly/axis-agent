@@ -39,7 +39,7 @@ HTTP API --> Fastify Gateway --------^
 Cron    --> Scheduler ---------------^
 ```
 
-The agent runs as a single Node.js process under systemd with security hardening. Health monitoring via GitHub Actions auto-restarts the service or reboots the instance if needed.
+The agent runs as a single Node.js process under systemd with security hardening. Health monitoring via GitHub Actions auto-restarts the service or reboots the instance if needed. CI runs build + tests on every push/PR, and Dependabot keeps dependencies updated with auto-merge for patch/minor bumps.
 
 ## Features
 
@@ -373,8 +373,12 @@ scripts/
   bitwarden/            # Secret management via Bitwarden vault
   google-contacts/      # Google Contacts backup, analysis, cleanup, dedup via People API
   skill-generator/      # Meta-skill: structured template + learning log for creating new skills
-.github/workflows/
-  health-check.yml      # GitHub Actions health monitoring (every 30 min)
+.github/
+  dependabot.yml        # Weekly Dependabot for npm (groups patch+minor, major separate)
+  workflows/
+    ci.yml              # CI: build + test on push/PR to main
+    dependabot-auto-merge.yml  # Auto-approve + squash-merge non-major Dependabot PRs
+    health-check.yml    # GitHub Actions health monitoring (every 30 min)
 systemd/
   claude-agent.service          # Systemd unit file (Axis Agent) with security hardening
   claude-token-refresh.service  # OAuth token refresh oneshot

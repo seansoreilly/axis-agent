@@ -140,7 +140,7 @@ describe("TelegramIntegration", () => {
 
     // User should be told it's queued
     const queueMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
-      String(c[1]).includes("Queued")
+      String(c[1]).includes("queued")
     );
     expect(queueMsg).toBeTruthy();
 
@@ -749,7 +749,7 @@ describe("TelegramIntegration", () => {
     await flush();
 
     const queueMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
-      String(c[1]).includes("Queued")
+      String(c[1]).includes("queued")
     );
     expect(queueMsg).toBeTruthy();
 

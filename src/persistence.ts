@@ -241,7 +241,7 @@ export class SqliteStore {
 
   getLastSession(userId: number, maxAgeMs: number): SessionRecord | undefined {
     const rows = this.db.prepare(
-      "SELECT * FROM sessions WHERE user_id = ? ORDER BY last_activity_at DESC LIMIT 20"
+      "SELECT * FROM sessions WHERE user_id = ? ORDER BY last_activity_at DESC, rowid DESC LIMIT 20"
     ).all(userId) as Array<Record<string, string | number | null>>;
     const cutoff = Date.now() - maxAgeMs;
     return rows
