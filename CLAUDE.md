@@ -35,7 +35,7 @@ Axis Agent — always-on AI agent powered by the Claude Agent SDK (`@anthropic-a
   - `TelegramProgressReporter` (`src/telegram-progress.ts`) — delayed ack messages + periodic status updates
   - `TELEGRAM_COMMANDS` (`src/telegram-commands.ts`) — command registry with names/descriptions
 - `Scheduler` (`src/scheduler.ts`) — cron-based task runner via `node-cron` with Australia/Melbourne timezone. Max 20 tasks, minimum 5-minute interval. Persists tasks to `<memoryDir>/tasks.json` and restores on startup. Supports monitor-style tasks via optional `checkCommand` field — a shell command runs first, and the agent only runs if it produces non-empty output. Results delivered via callback (wired to Telegram notifications in index.ts).
-- `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Routes: `GET /health`, `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `POST /owntracks` (location ingestion, enabled when `OWNTRACKS_TOKEN` is set), `POST /twilio/inbound-sms` (forwards incoming SMS to Telegram), `POST /calls`, `GET /calls/active`.
+- `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Uses `@fastify/helmet` for security headers and `@fastify/rate-limit` for rate limiting (60 req/min global, 5/min on `/webhook`, 3/min on `/calls`). Protected routes require `Authorization: Bearer <GATEWAY_API_TOKEN>` when the token is configured (backward-compatible: no auth enforced if unset). Public: `GET /health`. Protected: `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `GET/POST /calls`, `GET /admin/*`, `POST /twilio/inbound-sms`. Self-authenticated: `POST /owntracks` (own Bearer/Basic auth via `OWNTRACKS_TOKEN`).
 - `JobService` (`src/jobs.ts`) — async job queue for webhook/scheduler prompts. Enqueues prompt jobs, runs them via the Agent, supports retries (`maxAttempts`). Backed by `SqliteStore`.
 - `SqliteStore` (`src/persistence.ts`) — SQLite-backed persistence using `node:sqlite` (`DatabaseSync`). Stores memory facts, sessions, scheduled tasks, and job records. This is a Node.js 22+ built-in — no external SQLite dependency needed.
 - `MetricsRegistry` (`src/metrics.ts`) — in-memory counters and gauges for operational metrics.
@@ -44,7 +44,7 @@ Axis Agent — always-on AI agent powered by the Claude Agent SDK (`@anthropic-a
 - `VoiceService` (`src/voice.ts`) — manages outbound voice calls via Vapi REST API. Creates calls with fully inline transient assistant config (deepgram/nova-3 STT, openai/gpt-4o-mini LLM, cartesia/sonic-2 TTS, DTMF + endCall tools). Uses `startSpeakingPlan` with smart endpointing and `transcriptionEndpointingPlan` for low-latency turn detection. Supports `recipientName` for personalized greetings and `OWNER_NAME` env var for "calling on behalf of" context. When `context` is provided, uses model-generated first message to combine greeting + question in one utterance. Polls call status until ended, reads transcript from `artifact.transcript`. Injects SOUL.md personality and memory context into voice prompts. Callback delivers results (with transcript) to Telegram.
 - `Memory` (`src/memory.ts`) — JSON file store at `~/.claude-agent/memory/store.json`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
 - `Logger` (`src/logger.ts`) — minimal structured logger writing to stdout/stderr with `[axis-agent] [component]` prefix. Used by all components via `info()` and `error()` functions.
-- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`, `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_DTMF_TOOL_ID`, `VAPI_ASSISTANT_ID` (optional, no longer used for inline config), `CARTESIA_VOICE_ID`, `OWNER_NAME`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by `Auth` module). No `ANTHROPIC_API_KEY` needed.
+- `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-sonnet-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`, `GATEWAY_API_TOKEN`, `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_DTMF_TOOL_ID`, `VAPI_ASSISTANT_ID` (optional, no longer used for inline config), `CARTESIA_VOICE_ID`, `OWNER_NAME`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by `Auth` module). No `ANTHROPIC_API_KEY` needed.
 
 ## ESM Module System
 
@@ -151,6 +151,7 @@ Secrets are stored in Bitwarden and synced to the server at deploy time. The `bw
 | `trello-api-key` | `.env` → `TRELLO_API_KEY` |
 | `trello-api-token` | `.env` → `TRELLO_API_TOKEN` |
 | `owntracks-token` | `.env` → `OWNTRACKS_TOKEN` |
+| `gateway-api-token` | `.env` → `GATEWAY_API_TOKEN` |
 | `vapi-api-key` | `.env` → `VAPI_API_KEY` |
 | `vapi-phone-number-id` | `.env` → `VAPI_PHONE_NUMBER_ID` |
 | `cartesia-voice-id` | `.env` → `CARTESIA_VOICE_ID` |
@@ -201,6 +202,9 @@ The `--generate-notes` flag auto-generates release notes from commit messages si
 ## Security Model
 
 - Gateway binds to `0.0.0.0` (all interfaces) — Tailscale VPN + cloud firewall provide network access control
+- **Gateway auth**: `GATEWAY_API_TOKEN` env var enables bearer token auth on all endpoints except `/health` and `/owntracks` (which has its own auth). Optional — no auth enforced if unset (backward-compatible).
+- **Security headers**: `@fastify/helmet` sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Strict-Transport-Security`, disables `X-Powered-By`. CSP disabled (API-only, no HTML).
+- **Rate limiting**: `@fastify/rate-limit` with in-memory store. Global: 60 req/min. `/webhook`: 5 req/min. `/calls`: 3 req/min.
 - Telegram auth is fail-closed: empty `allowedUsers` = crash at startup
 - Error messages to users are generic; details logged server-side only
 - Scheduler limits: max 20 tasks, minimum 5-minute interval

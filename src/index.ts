@@ -104,6 +104,7 @@ async function main(): Promise<void> {
     jobs,
     store,
     owntracksToken: config.owntracksToken,
+    gatewayApiToken: config.gatewayApiToken,
     voiceService,
     onInboundSms: (from, body) => {
       if (primaryUser && telegram) {

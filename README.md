@@ -317,6 +317,9 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 - **Network isolation**: Gateway binds to `127.0.0.1` only — not reachable on public IP. Use Tailscale for remote access.
 - **Telegram auth**: Fail-closed — if `TELEGRAM_ALLOWED_USERS` is empty, the service refuses to start. If set, only listed user IDs can interact.
 - **Systemd sandboxing**: `ProtectHome=read-only`, `ProtectSystem=strict`, `NoNewPrivileges=true`, `PrivateTmp=true`, with explicit `ReadWritePaths` for required directories.
+- **Gateway auth**: Optional `GATEWAY_API_TOKEN` env var enables bearer token authentication on all HTTP endpoints except `/health`. When set, requests must include `Authorization: Bearer <token>`.
+- **Security headers**: `@fastify/helmet` adds `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and removes `X-Powered-By`.
+- **Rate limiting**: `@fastify/rate-limit` — 60 req/min global, 5 req/min on `/webhook`, 3 req/min on `/calls`.
 - **Request limits**: Gateway body size capped at 10KB. Scheduler limited to 20 tasks with minimum 5-minute intervals.
 - **Error sanitization**: Internal errors return generic messages to users; details logged server-side only.
 

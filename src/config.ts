@@ -24,6 +24,7 @@ export interface Config {
   };
   memoryDir: string;
   owntracksToken?: string;
+  gatewayApiToken?: string;
   vapi?: VapiConfig;
 }
 
@@ -88,6 +89,7 @@ export function loadConfig(): Config {
     },
     memoryDir,
     owntracksToken: process.env["OWNTRACKS_TOKEN"],
+    gatewayApiToken: process.env["GATEWAY_API_TOKEN"],
     vapi,
   };
 }

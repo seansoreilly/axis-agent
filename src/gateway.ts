@@ -1,4 +1,6 @@
 import Fastify from "fastify";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import type { Agent } from "./agent.js";
 import type { Memory } from "./memory.js";
 import type { Scheduler, ScheduledTask } from "./scheduler.js";
@@ -56,6 +58,7 @@ interface GatewayOptions {
   jobs?: JobService;
   store?: SqliteStore;
   owntracksToken?: string;
+  gatewayApiToken?: string;
   voiceService?: VoiceService;
   onInboundSms?: (from: string, body: string) => void;
 }
@@ -66,150 +69,177 @@ export async function createGateway(
   const { port, agent, scheduler, memory, owntracksToken, jobs, store } = opts;
   const app = Fastify({ bodyLimit: 10_240 });
 
+  // Security headers
+  await app.register(helmet, { contentSecurityPolicy: false });
+
+  // Global rate limit (60 req/min)
+  await app.register(rateLimit, {
+    max: 60,
+    timeWindow: "1 minute",
+  });
+
+  // --- Public routes (no auth) ---
   app.get("/health", async () => ({
     status: "ok",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   }));
 
-  app.post<{ Body: WebhookBody }>("/webhook", async (request, reply) => {
-    const { prompt, sessionId } = request.body;
-
-    if (!prompt || typeof prompt !== "string") {
-      return reply.status(400).send({ error: "prompt is required" });
+  // --- Protected routes (bearer auth when GATEWAY_API_TOKEN is set) ---
+  app.register(async function protectedRoutes(protectedApp) {
+    const gatewayApiToken = opts.gatewayApiToken;
+    if (gatewayApiToken) {
+      protectedApp.addHook("onRequest", async (request, reply) => {
+        const auth = request.headers.authorization ?? "";
+        if (!auth.startsWith("Bearer ") || auth.slice(7) !== gatewayApiToken) {
+          return reply.status(401).send({ error: "unauthorized" });
+        }
+      });
     }
 
-    metrics.increment("gateway.webhook.requests");
+    protectedApp.post<{ Body: WebhookBody }>("/webhook", {
+      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+    }, async (request, reply) => {
+      const { prompt, sessionId } = request.body;
 
-    const result = jobs
-      ? await jobs.waitForCompletion(
-          jobs.enqueuePromptJob({
-            prompt,
-            sessionId,
-            source: "webhook",
-          }).id
-        ).then((job) => ({
-          text: job.resultText ?? job.errorText ?? "",
-          sessionId: sessionId ?? "",
-          durationMs: 0,
-          totalCostUsd: 0,
-          isError: job.status !== "succeeded",
-          jobId: job.id,
-        }))
-      : await agent.run(prompt, { sessionId });
-
-    return {
-      jobId: "jobId" in result ? result.jobId : undefined,
-      text: result.text,
-      sessionId: result.sessionId,
-      durationMs: result.durationMs,
-      totalCostUsd: result.totalCostUsd,
-      isError: result.isError,
-    };
-  });
-
-  app.get("/tasks", async () => ({
-    tasks: scheduler.list(),
-  }));
-
-  app.post<{ Body: ScheduleBody }>("/tasks", async (request, reply) => {
-    const { id, name, schedule, prompt, enabled } = request.body;
-
-    if (!id || !name || !schedule || !prompt) {
-      return reply
-        .status(400)
-        .send({ error: "id, name, schedule, and prompt are required" });
-    }
-
-    const task: ScheduledTask = {
-      id,
-      name,
-      schedule,
-      prompt,
-      enabled: enabled ?? true,
-    };
-
-    scheduler.add(task);
-    return { ok: true, task };
-  });
-
-  app.delete<{ Params: { id: string } }>("/tasks/:id", async (request, reply) => {
-    const removed = scheduler.remove(request.params.id);
-    if (!removed) {
-      return reply.status(404).send({ error: "task not found" });
-    }
-    return { ok: true };
-  });
-
-  // Voice calling endpoints (only if voice service is configured)
-  if (opts.voiceService) {
-    app.post<{ Body: CallBody }>("/calls", async (request, reply) => {
-      const { phoneNumber, context, recipientName } = request.body;
-      if (!phoneNumber || typeof phoneNumber !== "string") {
-        return reply.status(400).send({ error: "phoneNumber is required" });
+      if (!prompt || typeof prompt !== "string") {
+        return reply.status(400).send({ error: "prompt is required" });
       }
-      if (!/^\+\d{7,15}$/.test(phoneNumber)) {
-        return reply.status(400).send({ error: "phoneNumber must be E.164 format" });
-      }
-      if (!opts.voiceService!.isAvailable()) {
-        return reply.status(503).send({ error: "Voice service not available (SIP trunk not configured)" });
-      }
-      const result = await opts.voiceService!.makeCall({ phoneNumber, context, recipientName });
-      return { callId: result.callId, status: result.status, error: result.error };
+
+      metrics.increment("gateway.webhook.requests");
+
+      const result = jobs
+        ? await jobs.waitForCompletion(
+            jobs.enqueuePromptJob({
+              prompt,
+              sessionId,
+              source: "webhook",
+            }).id
+          ).then((job) => ({
+            text: job.resultText ?? job.errorText ?? "",
+            sessionId: sessionId ?? "",
+            durationMs: 0,
+            totalCostUsd: 0,
+            isError: job.status !== "succeeded",
+            jobId: job.id,
+          }))
+        : await agent.run(prompt, { sessionId });
+
+      return {
+        jobId: "jobId" in result ? result.jobId : undefined,
+        text: result.text,
+        sessionId: result.sessionId,
+        durationMs: result.durationMs,
+        totalCostUsd: result.totalCostUsd,
+        isError: result.isError,
+      };
     });
 
-    app.get("/calls/active", async () => ({
-      calls: opts.voiceService!.listActiveCalls(),
+    protectedApp.get("/tasks", async () => ({
+      tasks: scheduler.list(),
     }));
 
-    info("gateway", "Voice calling endpoints enabled at /calls");
-  }
+    protectedApp.post<{ Body: ScheduleBody }>("/tasks", async (request, reply) => {
+      const { id, name, schedule, prompt, enabled } = request.body;
 
-  app.get("/admin/status", async () => ({
-    status: "ok",
-    uptime: process.uptime(),
-    metrics: metrics.snapshot(),
-    tasks: scheduler.list().length,
-    recentJobs: jobs?.listJobs(10) ?? [],
-  }));
-
-  app.get("/admin/jobs", async () => ({
-    jobs: jobs?.listJobs(50) ?? [],
-  }));
-
-  app.get("/admin/events", async () => ({
-    events: store?.listEvents(100) ?? [],
-  }));
-
-  app.get("/admin/metrics", async () => metrics.snapshot());
-
-  // Twilio inbound SMS webhook (only if callback is configured)
-  if (opts.onInboundSms) {
-    app.addContentTypeParser(
-      "application/x-www-form-urlencoded",
-      { parseAs: "string" },
-      (_req, body, done) => {
-        const params = new URLSearchParams(body as string);
-        const result: Record<string, string> = {};
-        params.forEach((value, key) => { result[key] = value; });
-        done(null, result);
+      if (!id || !name || !schedule || !prompt) {
+        return reply
+          .status(400)
+          .send({ error: "id, name, schedule, and prompt are required" });
       }
-    );
 
-    app.post<{ Body: TwilioSmsBody }>("/twilio/inbound-sms", async (request, reply) => {
-      const from = request.body?.From ?? "unknown";
-      const body = request.body?.Body ?? "";
-      info("gateway", `Inbound SMS from ${from}: ${body}`);
-      metrics.increment("gateway.twilio.inbound_sms");
-      opts.onInboundSms!(from, body);
-      reply.header("Content-Type", "text/xml");
-      return "<Response/>";
+      const task: ScheduledTask = {
+        id,
+        name,
+        schedule,
+        prompt,
+        enabled: enabled ?? true,
+      };
+
+      scheduler.add(task);
+      return { ok: true, task };
     });
 
-    info("gateway", "Twilio inbound SMS endpoint enabled at /twilio/inbound-sms");
-  }
+    protectedApp.delete<{ Params: { id: string } }>("/tasks/:id", async (request, reply) => {
+      const removed = scheduler.remove(request.params.id);
+      if (!removed) {
+        return reply.status(404).send({ error: "task not found" });
+      }
+      return { ok: true };
+    });
 
-  // OwnTracks location ingestion (only if token is configured)
+    // Voice calling endpoints (only if voice service is configured)
+    if (opts.voiceService) {
+      protectedApp.post<{ Body: CallBody }>("/calls", {
+        config: { rateLimit: { max: 3, timeWindow: "1 minute" } },
+      }, async (request, reply) => {
+        const { phoneNumber, context, recipientName } = request.body;
+        if (!phoneNumber || typeof phoneNumber !== "string") {
+          return reply.status(400).send({ error: "phoneNumber is required" });
+        }
+        if (!/^\+\d{7,15}$/.test(phoneNumber)) {
+          return reply.status(400).send({ error: "phoneNumber must be E.164 format" });
+        }
+        if (!opts.voiceService!.isAvailable()) {
+          return reply.status(503).send({ error: "Voice service not available (SIP trunk not configured)" });
+        }
+        const result = await opts.voiceService!.makeCall({ phoneNumber, context, recipientName });
+        return { callId: result.callId, status: result.status, error: result.error };
+      });
+
+      protectedApp.get("/calls/active", async () => ({
+        calls: opts.voiceService!.listActiveCalls(),
+      }));
+
+      info("gateway", "Voice calling endpoints enabled at /calls");
+    }
+
+    protectedApp.get("/admin/status", async () => ({
+      status: "ok",
+      uptime: process.uptime(),
+      metrics: metrics.snapshot(),
+      tasks: scheduler.list().length,
+      recentJobs: jobs?.listJobs(10) ?? [],
+    }));
+
+    protectedApp.get("/admin/jobs", async () => ({
+      jobs: jobs?.listJobs(50) ?? [],
+    }));
+
+    protectedApp.get("/admin/events", async () => ({
+      events: store?.listEvents(100) ?? [],
+    }));
+
+    protectedApp.get("/admin/metrics", async () => metrics.snapshot());
+
+    // Twilio inbound SMS webhook (only if callback is configured)
+    if (opts.onInboundSms) {
+      protectedApp.addContentTypeParser(
+        "application/x-www-form-urlencoded",
+        { parseAs: "string" },
+        (_req, body, done) => {
+          const params = new URLSearchParams(body as string);
+          const result: Record<string, string> = {};
+          params.forEach((value, key) => { result[key] = value; });
+          done(null, result);
+        }
+      );
+
+      protectedApp.post<{ Body: TwilioSmsBody }>("/twilio/inbound-sms", async (request, reply) => {
+        const from = request.body?.From ?? "unknown";
+        const body = request.body?.Body ?? "";
+        info("gateway", `Inbound SMS from ${from}: ${body}`);
+        metrics.increment("gateway.twilio.inbound_sms");
+        opts.onInboundSms!(from, body);
+        reply.header("Content-Type", "text/xml");
+        return "<Response/>";
+      });
+
+      info("gateway", "Twilio inbound SMS endpoint enabled at /twilio/inbound-sms");
+    }
+  }); // end protectedRoutes
+
+  // OwnTracks location ingestion (own auth, outside protected routes)
   if (owntracksToken && memory) {
     app.post<{ Body: OwnTracksLocation }>("/owntracks", async (request, reply) => {
       // Accept Bearer token OR HTTP Basic auth (OwnTracks iOS uses Basic)
