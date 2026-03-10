@@ -14,3 +14,7 @@ __pycache__/
 nanobanana-output/
 *:Zone.Identifier
 .claude/skills/google-contacts/
+.claude-agent/
+gws
+docs/iHerb_Supplements_List_2Years.txt
+src/supplements.html

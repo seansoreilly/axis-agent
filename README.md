@@ -18,7 +18,7 @@
 |---|---|---|
 | **Token cost** | Uses your Max/Pro plan tokens (included in subscription) | Requires separate API key billing |
 | **Always up to date** | Inherits Claude Code's tools, models, and capabilities as they ship | Must wait for OpenClaw maintainers to integrate updates |
-| **Tool ecosystem** | Full Claude Code toolset (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task) + MCP servers | Custom skills system (ClawHub — with known supply-chain risks from malicious skills) |
+| **Tool ecosystem** | Full Claude Code toolset (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task) + MCP servers + Google Workspace CLI | Custom skills system (ClawHub — with known supply-chain risks from malicious skills) |
 | **Security** | Anthropic-managed sandboxing, no third-party skill registry | User-managed Docker sandbox recommended; 386 malicious skills found on ClawHub (Feb 2026) |
 | **Complexity** | ~2,300 lines of TypeScript, single Node.js process | Full Docker Compose stack, 4+ GB RAM recommended |
 | **LLM lock-in** | Claude only | Multi-provider (Claude, GPT, DeepSeek) |
@@ -65,14 +65,13 @@ The agent runs as a single Node.js process under systemd with security hardening
 
 ### Integrations
 
+#### Google Workspace CLI (`gws`) — Primary Google Integration
+
+The agent uses [`@googleworkspace/cli`](https://www.npmjs.com/package/@googleworkspace/cli) as its primary tool for **all Google services**: Gmail, Calendar, Contacts, Drive, Sheets, Docs, and Admin. Authenticated via OAuth token (`~/.config/gws/credentials.json`) with full read/write scopes. A cron job refreshes the token every 3 days to prevent expiry.
+
 #### Composio MCP
 
-The agent uses [Composio](https://composio.dev/) as a unified tool router for third-party services. Composio provides 1000+ integrations via a single HTTP-based MCP server — the agent authenticates through a single API key, and Composio handles OAuth flows, token refresh, and credential storage.
-
-Currently connected tools:
-- **Google Calendar** — find events, retrieve by ID, find busy periods, find/get calendars
-- **Gmail** — find email, create draft, add label, archive, delete, get attachment
-- **Google Contacts** — find/create/update contact, add to groups, create group, upload photo
+[Composio](https://composio.dev/) provides 1000+ third-party integrations via a single HTTP-based MCP server. Used for **non-Google** services only — Google operations should use `gws` instead.
 
 #### Native Trello MCP
 
@@ -106,9 +105,9 @@ Outbound phone calls via Vapi REST API with real-time voice AI. Creates calls wi
 
 Requires: `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_DTMF_TOOL_ID`. Optional: `CARTESIA_VOICE_ID`, `OWNER_NAME`.
 
-#### Google Workspace CLI (`gws`)
+#### Google Workspace CLI (`gws`) — Details
 
-Unified CLI for all Google Workspace APIs (Drive, Gmail, Calendar, Sheets, Docs, Admin, etc.) via [`@googleworkspace/cli`](https://www.npmjs.com/package/@googleworkspace/cli). Installed globally, authenticated via service account (`GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`). The agent uses `gws` for Workspace operations that Composio doesn't cover or when more control is needed (e.g. Sheets, Docs, Admin). All output is structured JSON with auto-pagination support.
+Usage: `gws <service> <resource> <method> --params '{...}'` — supports Gmail, Calendar, Contacts (People API), Drive, Sheets, Docs, Admin. Flags: `--json` for request body, `--dry-run` to preview, `--page-all` for auto-pagination. All output is structured JSON. Schema inspection: `gws schema <service.resource.method>`.
 
 #### Playwright MCP (Browser Automation)
 
@@ -363,14 +362,16 @@ scripts/
   remember.js           # CLI for persistent fact CRUD
   lookup-contact.js     # Google Contacts lookup via People API
   daily_briefing.py     # Daily briefing script
-  refresh-token.sh      # OAuth token refresh (runs via systemd timer)
+  refresh-token.sh      # Claude OAuth token refresh (runs via systemd timer)
   refresh-token.py      # Token refresh logic (called by refresh-token.sh)
+  refresh-google-token.sh  # Google OAuth token keep-alive (cron, every 3 days)
 .claude/skills/
   facebook/             # Post text and photos to Facebook Page (with photo optimizer)
   twilio/               # SMS, voice calls, phone number management
   gmail/                # Gmail inbox triage via IMAP (fetch, archive, unsubscribe)
   commit/               # Safe git commit with secret/PII leak prevention + README check
   bitwarden/            # Secret management via Bitwarden vault
+  google-contacts/      # Google Contacts backup, analysis, cleanup, dedup via People API
   skill-generator/      # Meta-skill: structured template + learning log for creating new skills
 .github/workflows/
   health-check.yml      # GitHub Actions health monitoring (every 30 min)
