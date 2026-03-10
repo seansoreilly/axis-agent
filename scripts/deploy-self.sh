@@ -11,6 +11,11 @@ if [ -d "$AGENT_DIR/dist" ]; then
   sudo chown -R ubuntu:ubuntu "$AGENT_DIR/dist"
 fi
 
+echo "==> Ensuring gws CLI is installed globally..."
+if ! command -v gws &>/dev/null; then
+  npm install -g @googleworkspace/cli 2>&1
+fi
+
 echo "==> Installing all dependencies (including dev for build)..."
 npm install 2>&1
 

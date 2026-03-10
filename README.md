@@ -106,6 +106,10 @@ Outbound phone calls via Vapi REST API with real-time voice AI. Creates calls wi
 
 Requires: `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_DTMF_TOOL_ID`. Optional: `CARTESIA_VOICE_ID`, `OWNER_NAME`.
 
+#### Google Workspace CLI (`gws`)
+
+Unified CLI for all Google Workspace APIs (Drive, Gmail, Calendar, Sheets, Docs, Admin, etc.) via [`@googleworkspace/cli`](https://www.npmjs.com/package/@googleworkspace/cli). Installed globally, authenticated via service account (`GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`). The agent uses `gws` for Workspace operations that Composio doesn't cover or when more control is needed (e.g. Sheets, Docs, Admin). All output is structured JSON with auto-pagination support.
+
 #### Playwright MCP (Browser Automation)
 
 Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-mcp). Enables the agent to navigate JS-rendered pages, fill forms, click buttons, take screenshots, and generate PDFs — things WebFetch can't do. The agent automatically chooses WebFetch for static content and Playwright for dynamic/interactive pages.

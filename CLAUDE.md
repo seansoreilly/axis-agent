@@ -109,6 +109,29 @@ Configured in `.mcp.json` (auto-loaded by the SDK from cwd):
 - **Trello** (`src/trello-mcp-server.ts`) — custom native MCP server for Trello board/card/checklist management. Runs from `dist/trello-mcp-server.js` (must `npm run build` first). Requires `TRELLO_API_KEY`, `TRELLO_API_TOKEN`. Uses `zod` for input validation (available via `@modelcontextprotocol/sdk`, not a direct dependency).
 - **Playwright** (`@playwright/mcp`) — headless Chromium browser automation (screenshots, form filling, navigation). Viewport: 1280x720. `PrivateDevices=false` required in systemd unit for `/dev/shm` access.
 
+## Google Workspace CLI (`gws`)
+
+The `@googleworkspace/cli` package is installed globally, providing a unified CLI for all Google Workspace APIs (Drive, Gmail, Calendar, Sheets, Docs, Admin, etc.). It dynamically discovers API endpoints from Google's Discovery Service at runtime.
+
+**Auth:** Service account at `$GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` (points to `google-service-account.json` from Bitwarden). No interactive login needed.
+
+**Usage pattern:**
+```bash
+gws <service> <resource> <method> [--params '{"key":"value"}'] [--json '{"body":"..."}']
+```
+
+**Examples:**
+```bash
+gws drive files list --params '{"pageSize": 10}'
+gws sheets spreadsheets values get --params '{"spreadsheetId": "ID", "range": "Sheet1!A1:C10"}'
+gws sheets spreadsheets create --json '{"properties": {"title": "Budget"}}'
+gws schema drive.files.list    # inspect any method's request/response schema
+```
+
+**Flags:** `--dry-run` (preview), `--page-all` (auto-paginate), `--page-limit N`, JSON output by default.
+
+Prefer `gws` over Composio for Google Workspace operations that Composio doesn't cover or when more control is needed (e.g. Sheets, Docs, Admin).
+
 ## OwnTracks Location Tracking
 
 Real-time GPS location from the user's phone via OwnTracks app. The `POST /owntracks` endpoint accepts location updates and stores them as a `current-location` memory fact. Auth supports both Bearer token and HTTP Basic auth (iOS OwnTracks uses Basic by default — password field = token). Set `OWNTRACKS_TOKEN` env var to enable. Telegram live location sharing also updates the same memory fact.

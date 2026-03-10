@@ -34,6 +34,15 @@ else
   echo " ✅ Claude Code already installed ($(claude --version 2>/dev/null || echo 'unknown version'))"
 fi
 
+# --- Google Workspace CLI ---
+if ! command -v gws &>/dev/null; then
+  echo "Installing Google Workspace CLI..."
+  npm install -g @googleworkspace/cli
+  echo " ✅ gws installed"
+else
+  echo " ✅ gws already installed ($(gws --version 2>/dev/null || echo 'unknown version'))"
+fi
+
 echo ""
 echo "=== Installing project dependencies ==="
 
@@ -59,6 +68,7 @@ CLAUDE_MAX_TURNS=25
 CLAUDE_MAX_BUDGET_USD=5
 CLAUDE_WORK_DIR=${WORK_DIR}
 MEMORY_DIR=${MEMORY_DIR}
+GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE=${CLAUDE_AGENT_DIR}/google-service-account.json
 
 # === Secrets ===
 # Run: bash .devcontainer/setup-secrets.sh
