@@ -70,6 +70,17 @@ else
     echo ".env already exists, skipping generation."
 fi
 
+# --- Add bash aliases ---
+BASHRC="$HOME/.bashrc"
+if ! grep -q "alias claudy=" "$BASHRC" 2>/dev/null; then
+  echo "" >> "$BASHRC"
+  echo "# Claude Code aliases (added by devcontainer setup)" >> "$BASHRC"
+  echo "alias claudy='claude --dangerously-skip-permissions'" >> "$BASHRC"
+  echo " ✅ Added alias: claudy -> claude --dangerously-skip-permissions"
+else
+  echo " ✅ Alias claudy already exists in .bashrc"
+fi
+
 # --- Create tmux convenience script ---
 cat > .devcontainer/start-tmux.sh << 'TMUXEOF'
 #!/usr/bin/env bash
