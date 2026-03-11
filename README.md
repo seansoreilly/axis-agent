@@ -145,6 +145,18 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 - Post-deploy checks run `--dry-run` on every skill (facebook, twilio, gmail) to verify scripts are functional after deployment
 - Credential errors are reported as warnings (expected on fresh instances), while script errors are failures
 
+### Integration Tests
+Run `bash scripts/integration-test.sh` against the deployed instance. Tests perform real operations (not dry-run):
+- **Service health** — systemd status, gateway `/health`
+- **Gateway webhook** — submit prompts via HTTP, verify agent execution
+- **Email triage** — IMAP fetch, watermark state
+- **Google Contacts** — lookup by name, multi-result search
+- **Trello** — list boards, read cards from a board
+- **Google Calendar** — iCal fetch (7-day and 30-day windows)
+- **Memory/admin** — admin status, job queue, scheduled tasks, metrics
+- **Telegram Bot API** — `getMe`, polling mode verification
+- **Agent tool use** — verify Bash tool execution end-to-end
+
 ### Operations
 - Structured JSON logs for easier ingestion into log tooling
 - Durable SQLite-backed job queue for webhook and scheduler-triggered runs with per-job timeout and stuck job recovery
@@ -361,6 +373,7 @@ scripts/
   rollback-secrets.sh   # Restore server secrets from local backup
   deploy-self.sh        # Self-deploy (runs on the server)
   health-check.sh       # Local health monitoring (Tailscale, AWS, SSH, service)
+  integration-test.sh   # Integration tests — real operations against deployed instance
   post-deploy-check.sh  # Post-deploy regression tests (service, gateway, Telegram API)
   self-heal.sh          # Auto-restart service if inactive (systemd timer)
   update-sdk.sh         # Daily cron to update Agent SDK and restart if changed
