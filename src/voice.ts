@@ -199,14 +199,9 @@ export class VoiceService {
 
     const voiceConfig = { provider: "cartesia", voiceId };
 
-    // IVR calls: wait for the system to speak first, be patient with turn-taking
-    // Human calls: speak first, fast turn-taking
+    // Both IVR and human calls: wait for the other party to speak first
     const assistantConfig: Record<string, unknown> = {
-      firstMessageMode: isIvr
-        ? "assistant-waits-for-user"
-        : firstMessage
-          ? "assistant-speaks-first"
-          : "assistant-speaks-first-with-model-generated-message",
+      firstMessageMode: "assistant-waits-for-user",
       ...(firstMessage && !isIvr ? { firstMessage } : {}),
       model: modelConfig,
       voice: voiceConfig,
@@ -223,23 +218,19 @@ export class VoiceService {
         },
       },
       startSpeakingPlan: {
-        waitSeconds: isIvr ? 1.5 : 0.2,
-        smartEndpointingEnabled: !isIvr,
-        ...(isIvr
+        waitSeconds: isIvr ? 1.5 : 0.8,
+        smartEndpointingEnabled: true,
+        transcriptionEndpointingPlan: isIvr
           ? {
-              transcriptionEndpointingPlan: {
-                onPunctuationSeconds: 2.0,
-                onNoPunctuationSeconds: 2.5,
-                onNumberSeconds: 1.5,
-              },
+              onPunctuationSeconds: 2.0,
+              onNoPunctuationSeconds: 2.5,
+              onNumberSeconds: 1.5,
             }
           : {
-              transcriptionEndpointingPlan: {
-                onPunctuationSeconds: 0.1,
-                onNoPunctuationSeconds: 0.8,
-                onNumberSeconds: 0.7,
-              },
-            }),
+              onPunctuationSeconds: 0.5,
+              onNoPunctuationSeconds: 1.5,
+              onNumberSeconds: 1.0,
+            },
       },
       stopSpeakingPlan: {
         numWords: isIvr ? 8 : 2,
