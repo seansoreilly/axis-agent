@@ -252,8 +252,9 @@ describe("Scheduler with monitor tasks", () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     const jobs = makeJobs();
+    const onResult = vi.fn();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
 
     scheduler.add({
       id: "manual-1",
@@ -270,6 +271,10 @@ describe("Scheduler with monitor tasks", () => {
       source: "scheduler",
       metadata: { taskId: "manual-1", taskName: "Manual Task", manual: true },
     });
+
+    // Wait for the fire-and-forget callback to complete
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onResult).toHaveBeenCalledWith("manual-1", "done");
   });
 
   it("runNow throws for nonexistent task", async () => {

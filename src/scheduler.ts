@@ -207,6 +207,18 @@ export class Scheduler {
       source: "scheduler",
       metadata: { taskId: task.id, taskName: task.name, manual: true },
     });
+
+    // Wait for completion and deliver result (fire-and-forget)
+    void this.jobs.waitForCompletion(job.id, 10 * 60 * 1000).then((completed) => {
+      const text = completed.resultText ?? completed.errorText ?? "Task completed.";
+      info("scheduler", `Manual task ${task.id} completed via job ${job.id}`);
+      this.onResult?.(task.id, text);
+    }).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError("scheduler", `Manual task ${task.id} failed: ${msg}`);
+      this.onResult?.(task.id, `Task failed: ${msg}`);
+    });
+
     return job.id;
   }
 
