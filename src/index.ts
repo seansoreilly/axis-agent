@@ -1,6 +1,5 @@
 import { loadConfig } from "./config.js";
 import { Agent } from "./agent.js";
-import { Memory } from "./memory.js";
 import { Scheduler } from "./scheduler.js";
 import { TelegramIntegration } from "./telegram.js";
 import { createGateway } from "./gateway.js";
@@ -22,8 +21,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   const store = new SqliteStore(config.memoryDir);
-  const memory = new Memory(config.memoryDir);
-  const agent = new Agent(config, memory);
+  const agent = new Agent(config, store);
   const jobs = new JobService({ store, agent });
 
   // Set up scheduler with Telegram notifications (created before telegram so we can pass it)
@@ -52,7 +50,7 @@ async function main(): Promise<void> {
   let voiceService: VoiceServiceType | undefined;
   if (config.vapi) {
     const { VoiceService } = await import("./voice.js");
-    voiceService = new VoiceService(config.vapi, memory, (callId, status, result) => {
+    voiceService = new VoiceService(config.vapi, store, (callId, status, result) => {
       if (primaryUser && telegram) {
         let msg: string;
         if (status === "completed") {
@@ -87,7 +85,7 @@ async function main(): Promise<void> {
     config.telegram.botToken,
     config.telegram.allowedUsers,
     agent,
-    memory,
+    store,
     scheduler,
     voiceService
   );
@@ -100,7 +98,6 @@ async function main(): Promise<void> {
     port: config.server.port,
     agent,
     scheduler,
-    memory,
     jobs,
     store,
     owntracksToken: config.owntracksToken,

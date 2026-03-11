@@ -43,6 +43,22 @@ function makeAgent() {
   };
 }
 
+// Mock JobService
+function makeJobs() {
+  return {
+    enqueuePromptJob: vi.fn().mockReturnValue({ id: "job-1" }),
+    waitForCompletion: vi.fn().mockResolvedValue({
+      id: "job-1",
+      status: "succeeded",
+      resultText: "done",
+    }),
+    listJobs: vi.fn().mockReturnValue([]),
+    getJob: vi.fn(),
+    recoverStuckJobs: vi.fn().mockReturnValue(0),
+    processQueue: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe("runCheckCommand", () => {
   it("returns stdout from a successful command", async () => {
     const result = await runCheckCommand("echo hello world");
@@ -89,8 +105,9 @@ describe("Scheduler with monitor tasks", () => {
   it("adds a monitor task with checkCommand", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
+    const jobs = makeJobs();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir);
+    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
 
     scheduler.add({
       id: "monitor-1",
@@ -110,8 +127,9 @@ describe("Scheduler with monitor tasks", () => {
   it("persists checkCommand in storage", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
+    const jobs = makeJobs();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir);
+    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
 
     scheduler.add({
       id: "monitor-2",
@@ -129,8 +147,9 @@ describe("Scheduler with monitor tasks", () => {
   it("registers cron job for monitor task", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
+    const jobs = makeJobs();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir);
+    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
 
     scheduler.add({
       id: "monitor-3",
@@ -150,9 +169,10 @@ describe("Scheduler with monitor tasks", () => {
   it("monitor task cron handler skips agent when check returns empty", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
+    const jobs = makeJobs();
     const onResult = vi.fn();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir);
+    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
 
     scheduler.add({
       id: "monitor-4",
@@ -168,16 +188,17 @@ describe("Scheduler with monitor tasks", () => {
     await handler();
 
     // Agent should NOT have been called
-    expect(agent.run).not.toHaveBeenCalled();
+    expect(jobs.enqueuePromptJob).not.toHaveBeenCalled();
     expect(onResult).not.toHaveBeenCalled();
   });
 
   it("monitor task cron handler runs agent with check output prepended", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
+    const jobs = makeJobs();
     const onResult = vi.fn();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir);
+    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
 
     scheduler.add({
       id: "monitor-5",
@@ -191,9 +212,9 @@ describe("Scheduler with monitor tasks", () => {
     const handler = mockSchedule.mock.calls[0][1] as () => Promise<void>;
     await handler();
 
-    // Agent SHOULD have been called with check output prepended
-    expect(agent.run).toHaveBeenCalledOnce();
-    const promptArg = agent.run.mock.calls[0][0] as string;
+    // Job should have been enqueued with check output prepended
+    expect(jobs.enqueuePromptJob).toHaveBeenCalledOnce();
+    const promptArg = jobs.enqueuePromptJob.mock.calls[0][0].prompt as string;
     expect(promptArg).toContain("found 3 new items");
     expect(promptArg).toContain("Process the data above");
     expect(promptArg).toContain("Monitor Check Output");
@@ -203,9 +224,10 @@ describe("Scheduler with monitor tasks", () => {
   it("regular task (no checkCommand) still works normally", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
+    const jobs = makeJobs();
     const onResult = vi.fn();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir);
+    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
 
     scheduler.add({
       id: "regular-1",
@@ -218,16 +240,21 @@ describe("Scheduler with monitor tasks", () => {
     const handler = mockSchedule.mock.calls[0][1] as () => Promise<void>;
     await handler();
 
-    expect(agent.run).toHaveBeenCalledWith("Do something");
+    expect(jobs.enqueuePromptJob).toHaveBeenCalledWith({
+      prompt: "Do something",
+      source: "scheduler",
+      metadata: { taskId: "regular-1", taskName: "Regular Task" },
+    });
     expect(onResult).toHaveBeenCalledWith("regular-1", "done");
   });
 
   it("monitor task skips when check command fails", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
+    const jobs = makeJobs();
     const onResult = vi.fn();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir);
+    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
 
     scheduler.add({
       id: "monitor-6",
@@ -241,7 +268,7 @@ describe("Scheduler with monitor tasks", () => {
     const handler = mockSchedule.mock.calls[0][1] as () => Promise<void>;
     await handler();
 
-    expect(agent.run).not.toHaveBeenCalled();
+    expect(jobs.enqueuePromptJob).not.toHaveBeenCalled();
     expect(onResult).not.toHaveBeenCalled();
   });
 });

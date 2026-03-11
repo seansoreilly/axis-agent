@@ -18,3 +18,4 @@ nanobanana-output/
 gws
 docs/iHerb_Supplements_List_2Years.txt
 src/supplements.html
+*.lock

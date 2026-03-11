@@ -2,7 +2,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, basename } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Config } from "./config.js";
-import type { Memory } from "./memory.js";
+import type { SqliteStore } from "./persistence.js";
 import { error as logError, info } from "./logger.js";
 import { ensureValidToken } from "./auth.js";
 import { PromptBuilder } from "./prompt-builder.js";
@@ -95,16 +95,16 @@ export function discoverSkills(skillsDir: string): SkillInfo[] {
 
 export class Agent {
   private config: Config;
-  private memory: Memory;
+  private store: SqliteStore;
   private soulMd: string | null;
   private skillsDir: string;
   private promptBuilder: PromptBuilder;
 
-  constructor(config: Config, memory: Memory, soulMdPath?: string) {
+  constructor(config: Config, store: SqliteStore, soulMdPath?: string) {
     this.config = config;
-    this.memory = memory;
+    this.store = store;
     this.soulMd = loadSoulMd(soulMdPath);
-    this.promptBuilder = new PromptBuilder(config, memory);
+    this.promptBuilder = new PromptBuilder(config, store);
     if (this.soulMd) {
       info("agent", "Using SOUL.md for core personality");
     } else {

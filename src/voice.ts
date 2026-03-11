@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { VapiConfig } from "./config.js";
-import type { Memory } from "./memory.js";
+import type { SqliteStore } from "./persistence.js";
 import { info, error as logError } from "./logger.js";
 
 export interface VoiceCallRequest {
@@ -54,14 +54,14 @@ const VAPI_BASE = "https://api.vapi.ai";
 
 export class VoiceService {
   private readonly config: VapiConfig;
-  private readonly memory: Memory;
+  private readonly memory: SqliteStore;
   private readonly onCallStatus?: CallStatusCallback;
   private activeCalls: Map<string, ActiveCall> = new Map();
   private soulMd: string | null = null;
 
   constructor(
     vapiConfig: VapiConfig,
-    memory: Memory,
+    memory: SqliteStore,
     onCallStatus?: CallStatusCallback
   ) {
     this.config = vapiConfig;

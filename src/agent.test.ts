@@ -118,17 +118,17 @@ describe("Agent with SOUL.md", () => {
 
     // Import Agent dynamically to get the class with mock SDK
     const { Agent } = await import("./agent.js");
-    const { Memory } = await import("./memory.js");
+    const { SqliteStore } = await import("./persistence.js");
 
-    const memory = new Memory(memoryDir);
+    const store = new SqliteStore(memoryDir);
     const agent = new Agent(
       {
         telegram: { botToken: "test", allowedUsers: [1] },
         server: { port: 8080 },
-        claude: { model: "claude-sonnet-4-6", maxTurns: 5, maxBudgetUsd: 1, workDir: tmpDir },
+        claude: { model: "claude-sonnet-4-6", maxTurns: 5, maxBudgetUsd: 1, workDir: tmpDir, agentTimeoutMs: 600000 },
         memoryDir,
       },
-      memory,
+      store,
       soulPath
     );
 
@@ -141,17 +141,17 @@ describe("Agent with SOUL.md", () => {
     mkdirSync(memoryDir, { recursive: true });
 
     const { Agent } = await import("./agent.js");
-    const { Memory } = await import("./memory.js");
+    const { SqliteStore } = await import("./persistence.js");
 
-    const memory = new Memory(memoryDir);
+    const store = new SqliteStore(memoryDir);
     const agent = new Agent(
       {
         telegram: { botToken: "test", allowedUsers: [1] },
         server: { port: 8080 },
-        claude: { model: "claude-sonnet-4-6", maxTurns: 5, maxBudgetUsd: 1, workDir: tmpDir },
+        claude: { model: "claude-sonnet-4-6", maxTurns: 5, maxBudgetUsd: 1, workDir: tmpDir, agentTimeoutMs: 600000 },
         memoryDir,
       },
-      memory,
+      store,
       join(tmpDir, "nonexistent-soul.md")
     );
 

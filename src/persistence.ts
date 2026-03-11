@@ -1,8 +1,30 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Fact, FactCategory, SessionRecord } from "./memory.js";
 import type { ScheduledTask } from "./scheduler.js";
+
+// --- Types formerly in memory.ts ---
+
+export type FactCategory = "personal" | "work" | "preference" | "system" | "general";
+
+export interface Fact {
+  value: string;
+  category: FactCategory;
+  createdAt: string;
+  updatedAt: string;
+  lastAccessedAt: string;
+}
+
+export interface SessionRecord {
+  sessionId: string;
+  userId: number;
+  startedAt: string;
+  lastActivityAt: string;
+  turnCount: number;
+  totalCostUsd: number;
+  summary?: string;
+  lastPrompt: string;
+}
 
 export interface JobRecord {
   id: string;
@@ -25,8 +47,57 @@ interface LegacyMemoryStore {
   sessions: Array<SessionRecord | { sessionId: string; userId: number; startedAt: string; lastPrompt: string }>;
 }
 
+const MAX_CONTEXT_FACTS = 30;
+const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+/** Infer a category from a fact key using simple heuristics. */
+export function inferCategory(key: string): FactCategory {
+  const k = key.toLowerCase();
+  if (
+    k.includes("project") ||
+    k.includes("employer") ||
+    k.includes("role") ||
+    k.includes("repo") ||
+    k.includes("stack") ||
+    k.includes("work") ||
+    k.includes("client")
+  ) {
+    return "work";
+  }
+  if (
+    k.includes("name") ||
+    k.includes("birthday") ||
+    k.includes("location") ||
+    k.includes("timezone") ||
+    k.includes("email") ||
+    k.includes("phone") ||
+    k.includes("address")
+  ) {
+    return "personal";
+  }
+  if (
+    k.includes("prefer") ||
+    k.includes("style") ||
+    k.includes("favorite") ||
+    k.includes("language") ||
+    k.includes("tool")
+  ) {
+    return "preference";
+  }
+  if (
+    k.includes("deploy") ||
+    k.includes("server") ||
+    k.includes("service") ||
+    k.includes("config") ||
+    k.includes("infra")
+  ) {
+    return "system";
+  }
+  return "general";
 }
 
 export class SqliteStore {
@@ -148,6 +219,78 @@ export class SqliteStore {
       rmSync(tasksPath, { force: true });
     }
   }
+
+  // --- High-level fact methods (formerly in Memory) ---
+
+  /** Set a fact with automatic category inference and createdAt preservation. */
+  setFact(key: string, value: string, category?: FactCategory): void {
+    const existing = this.getFact(key);
+    this.upsertFact(
+      key,
+      value,
+      category ?? existing?.category ?? inferCategory(key),
+      { createdAt: existing?.createdAt }
+    );
+  }
+
+  /** Get a fact's value (string only), touching lastAccessedAt. Returns undefined if not found. */
+  getFactValue(key: string): string | undefined {
+    const fact = this.getFact(key);
+    if (fact) {
+      this.touchFact(key);
+    }
+    return fact?.value;
+  }
+
+  /**
+   * Build context string for the system prompt.
+   * Sorts facts by recency (updatedAt), caps at maxFacts.
+   * Optionally filters by categories.
+   */
+  getContext(opts?: { categories?: FactCategory[]; maxFacts?: number }): string {
+    const entries = this.queryFacts(opts?.categories, opts?.maxFacts ?? MAX_CONTEXT_FACTS);
+    if (entries.length === 0) return "";
+    return entries.map(([k, f]) => `- ${k}: ${f.value}`).join("\n");
+  }
+
+  /** Get memory statistics. */
+  getStats(): { totalFacts: number; byCategory: Record<string, number> } {
+    const facts = this.getAllFacts();
+    const byCategory: Record<string, number> = {};
+    for (const fact of Object.values(facts)) {
+      byCategory[fact.category] = (byCategory[fact.category] ?? 0) + 1;
+    }
+    return { totalFacts: Object.keys(facts).length, byCategory };
+  }
+
+  /** Record or update a session, merging with existing data. */
+  recordSession(
+    sessionId: string,
+    userId: number,
+    prompt: string,
+    opts?: { totalCostUsd?: number; turnCount?: number }
+  ): void {
+    const existing = this.listSessions()
+      .find((s) => s.sessionId === sessionId && s.userId === userId);
+    const startedAt = existing?.startedAt ?? new Date().toISOString();
+    this.upsertSession({
+      sessionId,
+      userId,
+      startedAt,
+      lastActivityAt: new Date().toISOString(),
+      turnCount: opts?.turnCount ?? existing?.turnCount ?? 0,
+      totalCostUsd: opts?.totalCostUsd ?? existing?.totalCostUsd ?? 0,
+      summary: existing?.summary,
+      lastPrompt: prompt.slice(0, 200),
+    });
+  }
+
+  /** Get the last non-stale session for a user. */
+  getRecentSession(userId: number): SessionRecord | undefined {
+    return this.getLastSession(userId, SESSION_MAX_AGE_MS);
+  }
+
+  // --- Low-level persistence methods ---
 
   upsertFact(
     key: string,
@@ -415,49 +558,4 @@ function mapJobRow(row: Record<string, string | number | null>): JobRecord {
     startedAt: row["started_at"] ? String(row["started_at"]) : undefined,
     finishedAt: row["finished_at"] ? String(row["finished_at"]) : undefined,
   };
-}
-
-function inferCategory(key: string): FactCategory {
-  const k = key.toLowerCase();
-  if (
-    k.includes("project") ||
-    k.includes("employer") ||
-    k.includes("role") ||
-    k.includes("repo") ||
-    k.includes("stack") ||
-    k.includes("work") ||
-    k.includes("client")
-  ) {
-    return "work";
-  }
-  if (
-    k.includes("name") ||
-    k.includes("birthday") ||
-    k.includes("location") ||
-    k.includes("timezone") ||
-    k.includes("email") ||
-    k.includes("phone") ||
-    k.includes("address")
-  ) {
-    return "personal";
-  }
-  if (
-    k.includes("prefer") ||
-    k.includes("style") ||
-    k.includes("favorite") ||
-    k.includes("language") ||
-    k.includes("tool")
-  ) {
-    return "preference";
-  }
-  if (
-    k.includes("deploy") ||
-    k.includes("server") ||
-    k.includes("service") ||
-    k.includes("config") ||
-    k.includes("infra")
-  ) {
-    return "system";
-  }
-  return "general";
 }

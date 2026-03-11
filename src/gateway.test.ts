@@ -25,7 +25,7 @@ function makeScheduler() {
   };
 }
 
-function makeMemory() {
+function makeStore() {
   return {
     setFact: vi.fn(),
   };
@@ -119,7 +119,7 @@ describe("Gateway", () => {
     const { createGateway } = await import("./gateway.js");
     const agent = makeAgent();
     const scheduler = makeScheduler();
-    const memory = makeMemory();
+    const store = makeStore();
 
     app = await createGateway({
       port: 0,
@@ -128,7 +128,7 @@ describe("Gateway", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       scheduler: scheduler as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      memory: memory as any,
+      store: store as any,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
@@ -141,7 +141,7 @@ describe("Gateway", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(memory.setFact).toHaveBeenCalledWith(
+    expect(store.setFact).toHaveBeenCalledWith(
       "current-location",
       expect.any(String),
       "personal"
@@ -257,6 +257,76 @@ describe("Gateway", () => {
     });
     expect(webhook.statusCode).toBe(200);
     expect(agent.run).toHaveBeenCalled();
+  });
+
+  it("returns 202 with jobId when JobService is configured (async webhook)", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const { SqliteStore } = await import("./persistence.js");
+    const { JobService } = await import("./jobs.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+    const store = new SqliteStore(tmpDir);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const jobs = new JobService({ store, agent: agent as any });
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      jobs,
+      store,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const webhook = await app.inject({
+      method: "POST",
+      url: "/webhook",
+      headers: authHeader(),
+      payload: { prompt: "async job", sessionId: "s1" },
+    });
+
+    expect(webhook.statusCode).toBe(202);
+    const body = JSON.parse(webhook.body);
+    expect(body.jobId).toBeTruthy();
+    expect(body.status).toBe("queued");
+
+    // Job should be retrievable via admin endpoint
+    const jobsResp = await app.inject({
+      method: "GET",
+      url: "/admin/jobs",
+      headers: authHeader(),
+    });
+    const jobsList = JSON.parse(jobsResp.body).jobs;
+    expect(jobsList.some((j: { id: string }) => j.id === body.jobId)).toBe(true);
+  });
+
+  it("returns 200 with direct result when no JobService (fallback)", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      // No jobs or gatewayApiToken — open access, direct execution
+    });
+
+    const webhook = await app.inject({
+      method: "POST",
+      url: "/webhook",
+      payload: { prompt: "direct" },
+    });
+
+    expect(webhook.statusCode).toBe(200);
+    const body = JSON.parse(webhook.body);
+    expect(body.text).toBe("done");
+    expect(body.isError).toBe(false);
+    expect(agent.run).toHaveBeenCalledWith("direct", { sessionId: undefined });
   });
 
   it("includes security headers from helmet", async () => {

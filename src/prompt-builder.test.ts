@@ -4,8 +4,8 @@ describe("Agent prompt construction", () => {
   it("injects memory context and session summaries into system prompt inputs", async () => {
     const { Agent } = await import("./agent.js");
 
-    const memory = {
-      getContext: (opts?: { categories?: string[] }) => {
+    const store = {
+      getContext: (opts?: { categories?: string[]; maxFacts?: number }) => {
         if (opts?.categories?.includes("personal")) {
           return "- timezone: Australia/Sydney";
         }
@@ -23,9 +23,10 @@ describe("Agent prompt construction", () => {
         maxTurns: 25,
         maxBudgetUsd: 5,
         workDir: process.cwd(),
+        agentTimeoutMs: 600000,
       },
       memoryDir: process.cwd(),
-    }, memory as any, "/definitely/missing/SOUL.md");
+    }, store as any, "/definitely/missing/SOUL.md");
 
     const prompt = (agent as unknown as { buildMemoryContext: (userId?: number) => string }).buildMemoryContext(1);
 

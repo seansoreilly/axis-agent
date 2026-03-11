@@ -356,13 +356,11 @@ src/
   telegram-commands.ts  # Telegram command definitions and registry
   telegram-media.ts     # Media handling (photos, voice, documents)
   telegram-progress.ts  # Typing indicators and ETA progress reporting
-  memory.ts             # Structured memory store (categorized facts, session records)
-  persistence.ts        # SQLite-backed storage for jobs, facts, sessions, and tasks
+  persistence.ts        # SQLite-backed storage for jobs, facts, sessions, memory, and tasks
   scheduler.ts          # Cron-based task scheduling
   jobs.ts               # Durable job queue (webhook and scheduler-triggered runs)
   metrics.ts            # In-process counters and gauges for operational metrics
-  prompt-builder.ts     # Tiered system prompt construction (core + extended)
-  prompt-config.ts      # Prompt section definitions and defaults
+  prompt-builder.ts     # Tiered system prompt construction (core + extended sections)
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
   voice.ts              # Voice calling service (Vapi REST API, call monitoring)

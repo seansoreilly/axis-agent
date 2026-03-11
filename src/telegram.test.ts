@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentResult } from "./agent.js";
-import type { Fact } from "./memory.js";
+import type { Fact } from "./persistence.js";
 
 // Shared mock bot instance — captured when TelegramBot constructor is called
 let mockBotInstance: Record<string, ReturnType<typeof vi.fn>>;
@@ -888,5 +888,112 @@ describe("TelegramIntegration", () => {
 
     // Agent should only have been called once (queued message was discarded)
     expect(agent.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects messages when queue is full (MAX_QUEUE_SIZE)", async () => {
+    let resolveFirst!: (v: AgentResult) => void;
+    const firstPromise = new Promise<AgentResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const agent = makeAgent();
+    agent.run.mockReturnValueOnce(firstPromise);
+
+    const { handler, botInstance } = await createBot(agent);
+
+    // Start first message (blocks)
+    handler(makeMsg("first"));
+    await flush();
+
+    // Fill the queue (MAX_QUEUE_SIZE = 5)
+    for (let i = 0; i < 5; i++) {
+      handler(makeMsg(`queued-${i}`));
+      await flush();
+    }
+
+    // 6th message should be rejected
+    handler(makeMsg("overflow"));
+    await flush();
+
+    const overflowMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("Queue full")
+    );
+    expect(overflowMsg).toBeTruthy();
+
+    // Clean up
+    resolveFirst({
+      text: "done",
+      sessionId: "sess-1",
+      durationMs: 100,
+      totalCostUsd: 0.01,
+      isError: false,
+    });
+    await flush();
+  });
+
+  it("shows timeout-specific error message with retry buttons", async () => {
+    const agent = makeAgent(() =>
+      Promise.reject(new Error("Request timed out"))
+    );
+    const { handler, botInstance } = await createBot(agent);
+
+    handler(makeMsg("slow task"));
+    await flush();
+
+    const timeoutMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("timed out")
+    );
+    expect(timeoutMsg).toBeTruthy();
+    // Should have inline keyboard with retry/new session buttons
+    expect(timeoutMsg[2]?.reply_markup?.inline_keyboard).toBeTruthy();
+  });
+
+  it("shows rate limit error message", async () => {
+    const agent = makeAgent(() =>
+      Promise.reject(new Error("429 rate limit exceeded"))
+    );
+    const { handler, botInstance } = await createBot(agent);
+
+    handler(makeMsg("rate limited"));
+    await flush();
+
+    const rlMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("Rate limited")
+    );
+    expect(rlMsg).toBeTruthy();
+  });
+
+  it("shows connection error message", async () => {
+    const agent = makeAgent(() =>
+      Promise.reject(new Error("ECONNRESET"))
+    );
+    const { handler, botInstance } = await createBot(agent);
+
+    handler(makeMsg("connection drop"));
+    await flush();
+
+    const connMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("Connection error")
+    );
+    expect(connMsg).toBeTruthy();
+  });
+
+  it("/remember stores fact and /forget deletes it", async () => {
+    const { handler, botInstance, memory } = await createBot();
+
+    handler(makeMsg("/remember city=Melbourne"));
+    await flush();
+
+    expect(memory.setFact).toHaveBeenCalledWith("city", "Melbourne");
+    const remMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
+      String(c[1]).includes("Remembered")
+    );
+    expect(remMsg).toBeTruthy();
+
+    memory.deleteFact.mockReturnValue(true);
+    handler(makeMsg("/forget city"));
+    await flush();
+
+    expect(memory.deleteFact).toHaveBeenCalledWith("city");
   });
 });

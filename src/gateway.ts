@@ -2,12 +2,11 @@ import Fastify from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import type { Agent } from "./agent.js";
-import type { Memory } from "./memory.js";
 import type { Scheduler, ScheduledTask } from "./scheduler.js";
 import { info } from "./logger.js";
 import type { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
-import type { SqliteStore } from "./persistence.js";
+import { type SqliteStore } from "./persistence.js";
 import type { VoiceService } from "./voice.js";
 
 interface WebhookBody {
@@ -54,7 +53,6 @@ interface GatewayOptions {
   port: number;
   agent: Agent;
   scheduler: Scheduler;
-  memory?: Memory;
   jobs?: JobService;
   store?: SqliteStore;
   owntracksToken?: string;
@@ -66,7 +64,7 @@ interface GatewayOptions {
 export async function createGateway(
   opts: GatewayOptions
 ): Promise<ReturnType<typeof Fastify>> {
-  const { port, agent, scheduler, memory, owntracksToken, jobs, store } = opts;
+  const { port, agent, scheduler, owntracksToken, jobs, store } = opts;
   const app = Fastify({ bodyLimit: 10_240 });
 
   // Security headers
@@ -108,25 +106,15 @@ export async function createGateway(
 
       metrics.increment("gateway.webhook.requests");
 
-      const result = jobs
-        ? await jobs.waitForCompletion(
-            jobs.enqueuePromptJob({
-              prompt,
-              sessionId,
-              source: "webhook",
-            }).id
-          ).then((job) => ({
-            text: job.resultText ?? job.errorText ?? "",
-            sessionId: sessionId ?? "",
-            durationMs: 0,
-            totalCostUsd: 0,
-            isError: job.status !== "succeeded",
-            jobId: job.id,
-          }))
-        : await agent.run(prompt, { sessionId });
+      if (jobs) {
+        // Async: enqueue and return job ID immediately — client polls /admin/jobs
+        const job = jobs.enqueuePromptJob({ prompt, sessionId, source: "webhook" });
+        return reply.status(202).send({ jobId: job.id, status: "queued" });
+      }
 
+      // Fallback: direct execution (no job service)
+      const result = await agent.run(prompt, { sessionId });
       return {
-        jobId: "jobId" in result ? result.jobId : undefined,
         text: result.text,
         sessionId: result.sessionId,
         durationMs: result.durationMs,
@@ -240,7 +228,7 @@ export async function createGateway(
   }); // end protectedRoutes
 
   // OwnTracks location ingestion (own auth, outside protected routes)
-  if (owntracksToken && memory) {
+  if (owntracksToken && store) {
     app.post<{ Body: OwnTracksLocation }>("/owntracks", async (request, reply) => {
       // Accept Bearer token OR HTTP Basic auth (OwnTracks iOS uses Basic)
       const auth = request.headers.authorization ?? "";
@@ -275,7 +263,7 @@ export async function createGateway(
         receivedAt: new Date().toISOString(),
       };
 
-      memory.setFact("current-location", JSON.stringify(location), "personal");
+      store.setFact("current-location", JSON.stringify(location), "personal");
       info("gateway", `Location updated: ${body.lat},${body.lon} (acc: ${body.acc ?? "?"}m)`);
       metrics.increment("gateway.owntracks.updates");
 

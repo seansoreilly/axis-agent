@@ -1,11 +1,11 @@
 import type TelegramBot from "node-telegram-bot-api";
 import type { Agent } from "./agent.js";
-import type { Memory } from "./memory.js";
+import type { SqliteStore } from "./persistence.js";
 import type { Scheduler } from "./scheduler.js";
 
 export interface TelegramCommandContext {
   bot: TelegramBot;
-  memory: Memory;
+  store: SqliteStore;
   scheduler?: Scheduler;
   agent: Agent;
 }

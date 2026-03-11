@@ -1,7 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import { unlinkSync } from "node:fs";
 import type { Agent, AgentResult } from "./agent.js";
-import type { Memory } from "./memory.js";
+import type { SqliteStore } from "./persistence.js";
 import type { Scheduler } from "./scheduler.js";
 import type { VoiceService } from "./voice.js";
 import { info, error as logError } from "./logger.js";
@@ -61,7 +61,7 @@ export class TelegramIntegration {
   private bot: TelegramBot;
   private botToken: string;
   private agent: Agent;
-  private memory: Memory;
+  private store: SqliteStore;
   private scheduler?: Scheduler;
   private voiceService?: VoiceService;
   private allowedUsers: Set<number>;
@@ -76,14 +76,14 @@ export class TelegramIntegration {
     botToken: string,
     allowedUsers: number[],
     agent: Agent,
-    memory: Memory,
+    store: SqliteStore,
     scheduler?: Scheduler,
     voiceService?: VoiceService
   ) {
     this.bot = new TelegramBot(botToken, { polling: true });
     this.botToken = botToken;
     this.agent = agent;
-    this.memory = memory;
+    this.store = store;
     this.scheduler = scheduler;
     this.voiceService = voiceService;
     this.allowedUsers = new Set(allowedUsers);
@@ -337,7 +337,7 @@ export class TelegramIntegration {
 
       // Only record sessions with valid session IDs (for analytics, not resumption)
       if (result.sessionId) {
-        this.memory.recordSession(result.sessionId, userId, text, {
+        this.store.recordSession(result.sessionId, userId, text, {
           totalCostUsd: result.totalCostUsd,
         });
       }
@@ -507,7 +507,7 @@ export class TelegramIntegration {
       at: utcDate.toISOString(),
       localTime: utcDate.toLocaleString("en-AU", { timeZone: "Australia/Melbourne", dateStyle: "medium", timeStyle: "short" }),
     });
-    this.memory.setFact("current-location", value, "personal");
+    this.store.setFact("current-location", value, "personal");
   }
 
   private async handleCommand(
@@ -673,14 +673,14 @@ export class TelegramIntegration {
           await this.bot.sendMessage(chatId, "Both key and value are required.");
           return;
         }
-        this.memory.setFact(key, value);
+        this.store.setFact(key, value);
         await this.bot.sendMessage(chatId, `Remembered: ${key}`);
         break;
       }
 
       case "/forget": {
         const key = sanitizeKey(argText.trim());
-        if (this.memory.deleteFact(key)) {
+        if (this.store.deleteFact(key)) {
           await this.bot.sendMessage(chatId, `Forgot: ${key}`);
         } else {
           await this.bot.sendMessage(chatId, `No memory found for: ${key}`);
@@ -689,7 +689,7 @@ export class TelegramIntegration {
       }
 
       case "/memories": {
-        const facts = this.memory.getAllFacts();
+        const facts = this.store.getAllFacts();
         const entries = Object.entries(facts);
         if (entries.length === 0) {
           await this.bot.sendMessage(chatId, "No memories stored.");
@@ -704,7 +704,7 @@ export class TelegramIntegration {
               return `- *${k}*: ${f.value} _[${f.category}, ${age}]_`;
             })
             .join("\n");
-          const stats = this.memory.getStats();
+          const stats = this.store.getStats();
           const catSummary = Object.entries(stats.byCategory)
             .map(([c, n]) => `${c}: ${n}`)
             .join(", ");
@@ -729,7 +729,7 @@ export class TelegramIntegration {
         const model = state.modelOverride
           ? Object.entries(VALID_MODELS).find(([, v]) => v === state.modelOverride)?.[0] ?? "custom"
           : "default";
-        const memStats = this.memory.getStats();
+        const memStats = this.store.getStats();
         const catLine = Object.entries(memStats.byCategory)
           .map(([c, n]) => `${c}:${n}`)
           .join(" ");
@@ -1101,7 +1101,7 @@ export class TelegramIntegration {
     info("telegram", `Generating conversation summary for session ${sessionId}`);
     const summary = await this.agent.generateSummary(sessionId);
     if (summary) {
-      this.memory.updateSessionSummary(sessionId, summary);
+      this.store.updateSessionSummary(sessionId, summary);
       info("telegram", `Stored conversation summary for user ${userId}`);
     }
   }
