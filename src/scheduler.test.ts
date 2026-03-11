@@ -248,6 +248,58 @@ describe("Scheduler with monitor tasks", () => {
     expect(onResult).toHaveBeenCalledWith("regular-1", "done");
   });
 
+  it("runNow triggers a task immediately via job service", async () => {
+    const { Scheduler } = await import("./scheduler.js");
+    const agent = makeAgent();
+    const jobs = makeJobs();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+
+    scheduler.add({
+      id: "manual-1",
+      name: "Manual Task",
+      schedule: "0 * * * *",
+      prompt: "Run this now",
+      enabled: true,
+    });
+
+    const jobId = scheduler.runNow("manual-1");
+    expect(jobId).toBe("job-1");
+    expect(jobs.enqueuePromptJob).toHaveBeenCalledWith({
+      prompt: "Run this now",
+      source: "scheduler",
+      metadata: { taskId: "manual-1", taskName: "Manual Task", manual: true },
+    });
+  });
+
+  it("runNow throws for nonexistent task", async () => {
+    const { Scheduler } = await import("./scheduler.js");
+    const agent = makeAgent();
+    const jobs = makeJobs();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+
+    expect(() => scheduler.runNow("nonexistent")).toThrow("Task not found: nonexistent");
+  });
+
+  it("runNow throws for disabled task", async () => {
+    const { Scheduler } = await import("./scheduler.js");
+    const agent = makeAgent();
+    const jobs = makeJobs();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+
+    scheduler.add({
+      id: "disabled-1",
+      name: "Disabled Task",
+      schedule: "0 * * * *",
+      prompt: "Should not run",
+      enabled: false,
+    });
+
+    expect(() => scheduler.runNow("disabled-1")).toThrow("Task is disabled: disabled-1");
+  });
+
   it("monitor task skips when check command fails", async () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();

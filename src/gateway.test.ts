@@ -22,6 +22,7 @@ function makeScheduler() {
     add: vi.fn(),
     remove: vi.fn().mockReturnValue(true),
     list: vi.fn().mockReturnValue([]),
+    runNow: vi.fn().mockReturnValue("job-manual-1"),
   };
 }
 
@@ -327,6 +328,59 @@ describe("Gateway", () => {
     expect(body.text).toBe("done");
     expect(body.isError).toBe(false);
     expect(agent.run).toHaveBeenCalledWith("direct", { sessionId: undefined });
+  });
+
+  it("triggers a task run on demand via POST /tasks/:id/run", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tasks/email-triage-hourly/run",
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.ok).toBe(true);
+    expect(body.jobId).toBe("job-manual-1");
+    expect(scheduler.runNow).toHaveBeenCalledWith("email-triage-hourly");
+  });
+
+  it("returns 404 when triggering nonexistent task", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+    scheduler.runNow.mockImplementation(() => {
+      throw new Error("Task not found: nope");
+    });
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/tasks/nope/run",
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(404);
   });
 
   it("includes security headers from helmet", async () => {

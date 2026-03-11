@@ -156,6 +156,17 @@ export async function createGateway(
       return { ok: true };
     });
 
+    protectedApp.post<{ Params: { id: string } }>("/tasks/:id/run", async (request, reply) => {
+      try {
+        const jobId = scheduler.runNow(request.params.id);
+        return { ok: true, jobId };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const status = message.includes("not found") ? 404 : 400;
+        return reply.status(status).send({ error: message });
+      }
+    });
+
     // Voice calling endpoints (only if voice service is configured)
     if (opts.voiceService) {
       protectedApp.post<{ Body: CallBody }>("/calls", {

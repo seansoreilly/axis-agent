@@ -179,6 +179,23 @@ export class PromptBuilder {
     private readonly store: SqliteStore
   ) {}
 
+  buildScheduledTasksContext(): string {
+    const tasks = this.store.listTasks();
+    if (tasks.length === 0) return "";
+
+    const lines = tasks.map(
+      (t) =>
+        `- **${t.name}** (id: \`${t.id}\`, schedule: \`${t.schedule}\`, ${t.enabled ? "enabled" : "disabled"})`
+    );
+    return [
+      "## Scheduled Tasks",
+      "These tasks run automatically on their cron schedules. To trigger one manually:",
+      '  curl -s -X POST http://localhost:8080/tasks/<id>/run -H "Content-Type: application/json"',
+      "",
+      ...lines,
+    ].join("\n");
+  }
+
   buildMemoryContext(userId?: number): string {
     const parts: string[] = [];
     const coreContext = this.store.getContext({
@@ -237,6 +254,11 @@ export class PromptBuilder {
     const parts = [this.buildCorePrompt(opts.soulMd)];
     if (!opts.resumedSession) {
       parts.push(this.buildExtendedPrompt(opts.runtimeSkillsSection));
+    }
+
+    const tasksContext = this.buildScheduledTasksContext();
+    if (tasksContext) {
+      parts.push(tasksContext);
     }
 
     const memoryContext = this.buildMemoryContext(opts.userId);

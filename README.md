@@ -63,6 +63,8 @@ The agent runs as a single Node.js process under systemd with security hardening
 ### Scheduled Tasks
 - Create via Telegram (`/schedule add`) or HTTP API
 - Cron-based scheduling with Australia/Melbourne timezone
+- On-demand trigger: `POST /tasks/:id/run` to run any task immediately
+- The agent is aware of all scheduled tasks and can trigger them when asked (e.g. "run the email triage task")
 - Results sent as Telegram notifications
 - Limits: max 20 tasks, minimum 5-minute interval
 
@@ -309,6 +311,7 @@ Any other message is sent to Claude as a prompt. Sessions persist — follow-up 
 | `/tasks` | GET | List scheduled tasks |
 | `/tasks` | POST | Create scheduled task (`{ "id", "name", "schedule", "prompt" }`) |
 | `/tasks/:id` | DELETE | Remove scheduled task |
+| `/tasks/:id/run` | POST | Trigger a scheduled task immediately (on demand) |
 | `/calls` | POST | Initiate outbound voice call (`{ "phoneNumber": "+61...", "context?": "...", "recipientName?": "..." }`) |
 | `/calls/active` | GET | List active voice calls |
 

@@ -188,6 +188,28 @@ export class Scheduler {
     return [...this.taskDefs.values()];
   }
 
+  /**
+   * Trigger a scheduled task immediately (on demand), bypassing its cron schedule.
+   * Returns the job ID if enqueued, or throws if the task doesn't exist or is disabled.
+   */
+  runNow(id: string): string {
+    const task = this.taskDefs.get(id);
+    if (!task) {
+      throw new Error(`Task not found: ${id}`);
+    }
+    if (!task.enabled) {
+      throw new Error(`Task is disabled: ${id}`);
+    }
+
+    info("scheduler", `Manual trigger for task: ${task.name} (${task.id})`);
+    const job = this.jobs.enqueuePromptJob({
+      prompt: task.prompt,
+      source: "scheduler",
+      metadata: { taskId: task.id, taskName: task.name, manual: true },
+    });
+    return job.id;
+  }
+
   stopAll(): void {
     for (const task of this.tasks.values()) {
       task.stop();
