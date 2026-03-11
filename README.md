@@ -50,12 +50,15 @@ The agent runs as a single Node.js process under systemd with security hardening
 - **Cancel/retry**: `/cancel` aborts a running request, `/retry` re-runs the last prompt
 - **Cost tracking**: `/cost` shows accumulated usage and per-request averages
 - **Media support**: photos (vision), voice messages (with duration), and document uploads
-- **Progress indicators**: typing status, ETA based on recent response times, periodic updates every 60s
+- **Progress indicators**: typing status, ETA based on recent response times, periodic updates every 60s with long-running warning after 5 minutes
 - **Inline keyboards**: retry and new session buttons on every response
 - **Persistent memory**: `/remember key=value`, `/forget key`, `/memories` — structured facts with categories (personal, work, preference, system, general) and access tracking
 - **Reply context**: reply to a specific message to include it as context
 - **Voice messages**: voice recordings passed to the agent with duration metadata
 - **Stale session recovery**: automatically retries without session ID if a resumed session fails
+- **Error classification**: timeout, rate limit, and connection errors shown with specific messages and retry/new session buttons
+- **Queue cap**: per-user message queue limited to 5 pending messages to prevent unbounded growth
+- **Agent timeout**: configurable execution timeout (default 10 min) aborts hung agent calls
 
 ### Scheduled Tasks
 - Create via Telegram (`/schedule add`) or HTTP API
@@ -144,7 +147,7 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 
 ### Operations
 - Structured JSON logs for easier ingestion into log tooling
-- Durable SQLite-backed job queue for webhook and scheduler-triggered runs
+- Durable SQLite-backed job queue for webhook and scheduler-triggered runs with per-job timeout and stuck job recovery
 - Admin/debug HTTP endpoints: `/admin/status`, `/admin/jobs`, `/admin/events`, `/admin/metrics`
 
 ## Installation
@@ -181,6 +184,7 @@ CLAUDE_MAX_TURNS=25
 CLAUDE_MAX_BUDGET_USD=5
 CLAUDE_WORK_DIR=/home/ubuntu/workspace
 MEMORY_DIR=/home/ubuntu/.claude-agent/memory
+CLAUDE_AGENT_TIMEOUT_MS=600000
 ```
 
 ### 3. Authenticate Claude Code on the server
@@ -323,8 +327,9 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 - **Gateway auth**: Optional `GATEWAY_API_TOKEN` env var enables bearer token authentication on all HTTP endpoints except `/health`. When set, requests must include `Authorization: Bearer <token>`.
 - **Security headers**: `@fastify/helmet` adds `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and removes `X-Powered-By`.
 - **Rate limiting**: `@fastify/rate-limit` — 60 req/min global, 5 req/min on `/webhook`, 3 req/min on `/calls`.
-- **Request limits**: Gateway body size capped at 10KB. Scheduler limited to 20 tasks with minimum 5-minute intervals.
-- **Error sanitization**: Internal errors return generic messages to users; details logged server-side only.
+- **Request limits**: Gateway body size capped at 10KB. Scheduler limited to 20 tasks with minimum 5-minute intervals. Per-user message queue capped at 5.
+- **Timeout protection**: Agent calls abort after configurable timeout (default 10 min). Jobs stuck in "running" state are automatically recovered every 5 minutes.
+- **Error sanitization**: Classified error messages (timeout, rate limit, connection) shown to users; internal details logged server-side only.
 
 ## Project Structure
 

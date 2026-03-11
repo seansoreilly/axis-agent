@@ -2,6 +2,7 @@ import TelegramBot from "node-telegram-bot-api";
 
 const ACK_DELAY_MS = 3000;
 const STATUS_UPDATE_INTERVAL_MS = 60_000;
+const LONG_RUNNING_WARNING_MS = 5 * 60 * 1000;
 
 export class TelegramProgressReporter {
   constructor(
@@ -24,8 +25,13 @@ export class TelegramProgressReporter {
         updateInterval = setInterval(async () => {
           if (stopped || !ackMessageId) return;
           try {
+            const elapsedMs = Date.now() - startTime;
+            const elapsedText = this.formatElapsed(startTime);
+            const text = elapsedMs >= LONG_RUNNING_WARNING_MS
+              ? `Still working... (${elapsedText} elapsed) — taking longer than usual. /cancel to abort.`
+              : `Still working... (${elapsedText} elapsed)`;
             await this.bot.editMessageText(
-              `Still working... (${this.formatElapsed(startTime)} elapsed)`,
+              text,
               { chat_id: chatId, message_id: ackMessageId }
             );
           } catch {

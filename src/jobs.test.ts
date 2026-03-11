@@ -39,7 +39,7 @@ describe("JobService", () => {
 
     expect(completed.status).toBe("succeeded");
     expect(completed.resultText).toBe("completed");
-    expect(agent.run).toHaveBeenCalledWith("hello", { sessionId: undefined });
+    expect(agent.run).toHaveBeenCalledWith("hello", expect.objectContaining({ sessionId: undefined }));
     expect(jobs.listJobs(10)[0]?.id).toBe(job.id);
   });
 });

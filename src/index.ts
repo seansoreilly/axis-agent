@@ -118,6 +118,20 @@ async function main(): Promise<void> {
     },
   });
 
+  // Recover any stuck jobs from a previous crash
+  const recoveredCount = jobs.recoverStuckJobs();
+  if (recoveredCount > 0) {
+    info("main", `Recovered ${recoveredCount} stuck job(s) at startup`);
+  }
+
+  // Periodically check for stuck jobs (every 5 minutes)
+  const stuckJobInterval = setInterval(() => {
+    const count = jobs.recoverStuckJobs();
+    if (count > 0) {
+      info("main", `Recovered ${count} stuck job(s)`);
+    }
+  }, 5 * 60 * 1000);
+
   // Start periodic token refresh (every 30 minutes)
   const tokenRefreshTimer = startTokenRefreshTimer();
   metrics.setGauge("service.started", Date.now());
@@ -127,6 +141,7 @@ async function main(): Promise<void> {
   // Graceful shutdown
   const shutdown = (): void => {
     info("main", "Shutting down...");
+    clearInterval(stuckJobInterval);
     clearInterval(tokenRefreshTimer);
     telegram.stop();
     scheduler.stopAll();

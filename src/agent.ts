@@ -21,6 +21,7 @@ export interface AgentResult {
   durationMs: number;
   totalCostUsd: number;
   isError: boolean;
+  isTimeout: boolean;
   rateLimit?: RateLimitInfo;
 }
 
@@ -151,7 +152,7 @@ export class Agent {
 
   async run(
     prompt: string,
-    opts?: { sessionId?: string; model?: string; signal?: AbortSignal; userId?: number }
+    opts?: { sessionId?: string; model?: string; signal?: AbortSignal; userId?: number; timeoutMs?: number }
   ): Promise<AgentResult> {
     const isResumedSession = !!opts?.sessionId;
     const { claude } = this.config;
@@ -208,7 +209,13 @@ export class Agent {
     let durationMs = 0;
     let totalCostUsd = 0;
     let isError = false;
+    let isTimeout = false;
     let rateLimit: RateLimitInfo | undefined;
+
+    // Set up execution timeout
+    const timeoutMs = opts?.timeoutMs ?? this.config.claude.agentTimeoutMs;
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
 
     // Pre-flight: ensure OAuth token is valid before spawning SDK
     await ensureValidToken();
@@ -220,6 +227,12 @@ export class Agent {
         if (opts?.signal?.aborted) {
           isError = true;
           resultText = "Request cancelled.";
+          break;
+        }
+        if (timeoutController.signal.aborted) {
+          isError = true;
+          isTimeout = true;
+          resultText = "Request timed out. Try a shorter request or start a /new session.";
           break;
         }
         if (message.type === "system" && message.subtype === "init") {
@@ -274,11 +287,20 @@ export class Agent {
       isError = true;
       const msg = error instanceof Error ? error.message : String(error);
       logError("agent", `Run failed: ${msg}`);
-      if (msg.includes("exited with code 1")) {
+      if (/rate limit|429|529|overloaded/i.test(msg)) {
+        resultText = "Rate limited. Please wait a few minutes and try again.";
+      } else if (/timeout|ETIMEDOUT|timed out/i.test(msg)) {
+        isTimeout = true;
+        resultText = "Request timed out. Try a shorter request or start a /new session.";
+      } else if (/ECONNRESET|ECONNREFUSED|socket hang up/i.test(msg)) {
+        resultText = "Connection error — usually temporary, please retry.";
+      } else if (msg.includes("exited with code 1")) {
         resultText = "Claude Code process failed (likely auth/permissions). Token refresh was attempted — please retry.";
       } else {
         resultText = "An internal error occurred. Please try again.";
       }
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     return {
@@ -287,6 +309,7 @@ export class Agent {
       durationMs,
       totalCostUsd,
       isError,
+      isTimeout,
       rateLimit,
     };
   }

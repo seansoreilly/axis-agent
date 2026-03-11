@@ -21,6 +21,7 @@ export interface Config {
     maxTurns: number;
     maxBudgetUsd: number;
     workDir: string;
+    agentTimeoutMs: number;
   };
   memoryDir: string;
   owntracksToken?: string;
@@ -86,6 +87,7 @@ export function loadConfig(): Config {
       maxTurns: Number(process.env["CLAUDE_MAX_TURNS"] ?? "25"),
       maxBudgetUsd: Number(process.env["CLAUDE_MAX_BUDGET_USD"] ?? "5"),
       workDir,
+      agentTimeoutMs: Number(process.env["CLAUDE_AGENT_TIMEOUT_MS"] ?? "600000"),
     },
     memoryDir,
     owntracksToken: process.env["OWNTRACKS_TOKEN"],

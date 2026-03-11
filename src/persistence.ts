@@ -346,6 +346,13 @@ export class SqliteStore {
     return rows.map(mapJobRow);
   }
 
+  getStuckJobs(olderThan: string): JobRecord[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM jobs WHERE status = 'running' AND started_at < ?"
+    ).all(olderThan) as Array<Record<string, string | number | null>>;
+    return rows.map(mapJobRow);
+  }
+
   getRunnableJobs(limit = 10): JobRecord[] {
     const rows = this.db.prepare(
       "SELECT * FROM jobs WHERE status = 'queued' AND run_after <= ? ORDER BY created_at ASC LIMIT ?"

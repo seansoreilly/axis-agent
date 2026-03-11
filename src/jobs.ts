@@ -82,6 +82,33 @@ export class JobService {
     }
   }
 
+  recoverStuckJobs(): number {
+    const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const stuck = this.opts.store.getStuckJobs(cutoff);
+    let recovered = 0;
+    for (const job of stuck) {
+      if (job.attempts < job.maxAttempts) {
+        job.status = "queued";
+        job.runAfter = new Date(Date.now() + 5_000).toISOString();
+        job.updatedAt = nowIso();
+        this.opts.store.updateJob(job);
+        this.opts.store.addEvent("job_recovered", { jobId: job.id, action: "requeued" });
+        info("jobs", `Recovered stuck job ${job.id} — requeued (attempt ${job.attempts}/${job.maxAttempts})`);
+      } else {
+        job.status = "failed";
+        job.errorText = "Job timed out while running";
+        job.finishedAt = nowIso();
+        job.updatedAt = nowIso();
+        this.opts.store.updateJob(job);
+        this.opts.store.addEvent("job_recovered", { jobId: job.id, action: "failed" });
+        info("jobs", `Recovered stuck job ${job.id} — marked failed (max attempts reached)`);
+      }
+      this.notifyWaiters(job);
+      recovered++;
+    }
+    return recovered;
+  }
+
   async processQueue(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -108,9 +135,12 @@ export class JobService {
     this.opts.store.updateJob(job);
     this.opts.store.addEvent("job_started", { jobId: job.id, source: payload.source });
 
+    const controller = new AbortController();
+    const jobTimeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000);
     try {
       const result = await this.opts.agent.run(payload.prompt, {
         sessionId: payload.sessionId,
+        signal: controller.signal,
       });
       job.resultText = result.text;
       job.status = result.isError ? "failed" : "succeeded";
@@ -147,6 +177,8 @@ export class JobService {
         metrics.increment("jobs.failed");
         this.notifyWaiters(job);
       }
+    } finally {
+      clearTimeout(jobTimeoutId);
     }
   }
 }

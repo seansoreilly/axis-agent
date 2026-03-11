@@ -12,6 +12,7 @@ import { metrics } from "./metrics.js";
 
 const MAX_MESSAGE_LENGTH = 4096;
 const RESPONSE_TIME_HISTORY = 20; // Track last N response times for ETA
+const MAX_QUEUE_SIZE = 5;
 
 // Telegram Bot API Location fields missing from @types/node-telegram-bot-api
 interface TelegramLocation {
@@ -267,6 +268,13 @@ export class TelegramIntegration {
     // Queue message if agent is already busy for this user
     if (this.processingUsers.has(userId)) {
       const state = this.getState(userId);
+      if (state.messageQueue.length >= MAX_QUEUE_SIZE) {
+        await this.bot.sendMessage(
+          chatId,
+          `Queue full (${MAX_QUEUE_SIZE} pending). Wait for the current task or /cancel it.`
+        );
+        return;
+      }
       state.messageQueue.push({ chatId, text });
       const pos = state.messageQueue.length;
       const elapsed = state.currentTaskStartMs
@@ -352,10 +360,28 @@ export class TelegramIntegration {
       logError("telegram", `Agent run failed for user ${userId}: ${errMsg}`);
       metrics.increment("telegram.requests.failed");
       await progress.stop();
-      await this.bot.sendMessage(
-        chatId,
-        "Something went wrong processing your message. Please try again."
-      );
+
+      let userMessage: string;
+      if (/timeout|ETIMEDOUT|timed out/i.test(errMsg)) {
+        userMessage = "Request timed out. Try a shorter request or start a /new session.";
+      } else if (/rate limit|429|529|overloaded/i.test(errMsg)) {
+        userMessage = "Rate limited. Please wait a few minutes and try again.";
+      } else if (/ECONNRESET|ECONNREFUSED|socket hang up/i.test(errMsg)) {
+        userMessage = "Connection error — usually temporary, please retry.";
+      } else {
+        userMessage = "Something went wrong processing your message. Please try again.";
+      }
+
+      await this.bot.sendMessage(chatId, userMessage, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "Retry", callback_data: "retry" },
+              { text: "New session", callback_data: "new_session" },
+            ],
+          ],
+        },
+      });
     } finally {
       clearInterval(typingInterval);
       this.processingUsers.delete(userId);
