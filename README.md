@@ -388,9 +388,13 @@ scripts/
   facebook/             # Post text and photos to Facebook Page (with photo optimizer)
   twilio/               # SMS, voice calls, phone number management
   gmail/                # Gmail inbox triage via IMAP (fetch, archive, unsubscribe)
+  claude-admin/         # Manage Anthropic organization via Admin API
   commit/               # Safe git commit with secret/PII leak prevention + README check
+  commit-agent/         # Safe git commit for the deployed agent instance
   bitwarden/            # Secret management via Bitwarden vault
+  google-calendar/      # Google Calendar integration
   google-contacts/      # Google Contacts backup, analysis, cleanup, dedup via People API
+  review-claude-code/   # Review SDK/CLI updates and identify refactoring opportunities
   skill-generator/      # Meta-skill: structured template + learning log for creating new skills
 .github/
   dependabot.yml        # Weekly Dependabot for npm (groups patch+minor, major separate)
