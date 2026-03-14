@@ -70,6 +70,11 @@ CLAUDE_WORK_DIR=${WORK_DIR}
 MEMORY_DIR=${MEMORY_DIR}
 GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE=${CLAUDE_AGENT_DIR}/google-service-account.json
 
+# === Retell (voice calling) ===
+# RETELL_API_KEY=
+# RETELL_PHONE_NUMBER=
+# RETELL_AGENT_ID=
+
 # === Secrets ===
 # Run: bash .devcontainer/setup-secrets.sh
 # to inject secrets from Bitwarden vault.

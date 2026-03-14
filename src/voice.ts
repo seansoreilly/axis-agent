@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { VapiConfig } from "./config.js";
+import Retell from "retell-sdk";
+import type { RetellConfig } from "./config.js";
 import type { SqliteStore } from "./persistence.js";
 import { info, error as logError } from "./logger.js";
 
@@ -34,38 +35,28 @@ type CallStatusCallback = (
 
 interface ActiveCall {
   callId: string;
-  vapiCallId: string;
+  retellCallId: string;
   phoneNumber: string;
   userId?: number;
   startedAt: number;
 }
 
-interface VapiCallResponse {
-  id: string;
-  status: string;
-  startedAt?: string;
-  endedAt?: string;
-  artifact?: {
-    transcript?: string;
-  };
-}
-
-const VAPI_BASE = "https://api.vapi.ai";
-
 export class VoiceService {
-  private readonly config: VapiConfig;
+  private readonly config: RetellConfig;
   private readonly memory: SqliteStore;
+  private readonly client: Retell;
   private readonly onCallStatus?: CallStatusCallback;
   private activeCalls: Map<string, ActiveCall> = new Map();
   private soulMd: string | null = null;
 
   constructor(
-    vapiConfig: VapiConfig,
+    retellConfig: RetellConfig,
     memory: SqliteStore,
     onCallStatus?: CallStatusCallback
   ) {
-    this.config = vapiConfig;
+    this.config = retellConfig;
     this.memory = memory;
+    this.client = new Retell({ apiKey: retellConfig.apiKey });
     this.onCallStatus = onCallStatus;
     this.soulMd = this.loadSoulMd();
   }
@@ -86,7 +77,7 @@ export class VoiceService {
   }
 
   isAvailable(): boolean {
-    return !!this.config.phoneNumberId;
+    return !!this.config.phoneNumber;
   }
 
   getActiveCall(callId: string): ActiveCall | undefined {
@@ -105,36 +96,29 @@ export class VoiceService {
       `Initiating call ${callId} to ${request.phoneNumber}${request.context ? ` (${request.context.slice(0, 50)})` : ""}`
     );
 
-    const systemPrompt = this.buildVoicePrompt(request);
-    const firstMessage = this.buildGreeting(request);
-    const voiceId =
-      this.config.ttsVoiceId ?? "043cfc81-d69f-4bee-ae1e-7862cb358650"; // Australian Woman
     try {
-      const callBody = this.buildCallBody(
-        request,
-        systemPrompt,
-        firstMessage,
-        voiceId
-      );
-      const response = await fetch(`${VAPI_BASE}/call`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.config.apiKey}`,
-          "Content-Type": "application/json",
+      const systemPrompt = this.buildVoicePrompt(request);
+      const greeting = this.buildGreeting(request);
+
+      const retellCall = await this.client.call.createPhoneCall({
+        from_number: this.config.phoneNumber,
+        to_number: request.phoneNumber,
+        retell_llm_dynamic_variables: {
+          system_prompt: systemPrompt,
+          begin_message: greeting ?? "",
         },
-        body: JSON.stringify(callBody),
+        agent_override: {
+          retell_llm: {
+            model: "claude-4.6-sonnet",
+            start_speaker: "user",
+            begin_message: greeting ?? "",
+          },
+        },
       });
-
-      if (!response.ok) {
-        const body = await response.text();
-        throw new Error(`Vapi API error ${response.status}: ${body}`);
-      }
-
-      const vapiCall = (await response.json()) as VapiCallResponse;
 
       const activeCall: ActiveCall = {
         callId,
-        vapiCallId: vapiCall.id,
+        retellCallId: retellCall.call_id,
         phoneNumber: request.phoneNumber,
         userId: request.userId,
         startedAt: Date.now(),
@@ -179,75 +163,6 @@ export class VoiceService {
     return ["ivr", "menu", "automated", "support", "demo", "hotline", "after-hours", "helpline", "switchboard", "test line", "voicemail", "phone tree", "press"].some(
       (kw) => ctx.includes(kw)
     );
-  }
-
-  private buildCallBody(
-    request: VoiceCallRequest,
-    systemPrompt: string,
-    firstMessage: string | undefined,
-    voiceId: string
-  ): Record<string, unknown> {
-    const isIvr = this.isIvrCall(request);
-
-    const modelConfig = {
-      provider: "openai",
-      model: "gpt-4o-mini",
-      toolIds: [this.config.dtmfToolId],
-      tools: [{ type: "endCall" }],
-      messages: [{ role: "system", content: systemPrompt }],
-    };
-
-    const voiceConfig = { provider: "cartesia", voiceId };
-
-    // Both IVR and human calls: wait for the other party to speak first
-    const assistantConfig: Record<string, unknown> = {
-      firstMessageMode: "assistant-waits-for-user",
-      ...(firstMessage && !isIvr ? { firstMessage } : {}),
-      model: modelConfig,
-      voice: voiceConfig,
-      silenceTimeoutSeconds: isIvr ? 45 : 30,
-      maxDurationSeconds: 300,
-      backgroundSound: "off",
-      voicemailDetection: {
-        provider: "vapi",
-        beepMaxAwaitSeconds: 12,
-        backoffPlan: {
-          maxRetries: 5,
-          startAtSeconds: 2,
-          frequencySeconds: 2.5,
-        },
-      },
-      startSpeakingPlan: {
-        waitSeconds: isIvr ? 1.5 : 0.8,
-        smartEndpointingEnabled: true,
-        transcriptionEndpointingPlan: isIvr
-          ? {
-              onPunctuationSeconds: 2.0,
-              onNoPunctuationSeconds: 2.5,
-              onNumberSeconds: 1.5,
-            }
-          : {
-              onPunctuationSeconds: 0.5,
-              onNoPunctuationSeconds: 1.5,
-              onNumberSeconds: 1.0,
-            },
-      },
-      stopSpeakingPlan: {
-        numWords: isIvr ? 8 : 2,
-        backoffSeconds: isIvr ? 3 : 1,
-        acknowledgementPhrases: [
-          "yeah", "uh-huh", "mm-hmm", "okay", "right",
-          "got it", "sure", "yep", "mhm",
-        ],
-      },
-    };
-
-    // Always use inline transient assistant for full dynamic control
-    return {
-      phoneNumberId: this.config.phoneNumberId,
-      customer: { number: request.phoneNumber },
-      assistant: assistantConfig,
-    };
   }
 
   private buildVoicePrompt(request: VoiceCallRequest): string {
@@ -300,8 +215,7 @@ export class VoiceService {
         "- When asked for a number, just say the number",
         "- When asked to describe your issue, give a brief 1-sentence summary",
         "- When given menu options, listen to ALL options, then choose the best one",
-        "- When the system says 'press 1 for X, press 2 for Y', you MUST use the DTMF tool to press the key",
-        "- To press a key, call the DTMF tool with the digit (e.g. '1', '2', '3')",
+        "- When the system says 'press 1 for X, press 2 for Y', say the digit clearly",
         "- If no menu option matches your purpose, press 0 for operator or say 'representative'",
         "- If asked to hold, stay silent and wait",
         "",
@@ -312,10 +226,10 @@ export class VoiceService {
         "- Make up reasonable placeholder details if asked for something not in the context (e.g. account number)",
         "",
         "## Ending",
-        "- When the system says goodbye or the interaction is complete, say a SINGLE quick goodbye and call endCall IMMEDIATELY in the SAME turn",
-        '- Example: "Thanks, goodbye!" → endCall',
-        "- Do NOT wait for their response after saying goodbye — call endCall right away",
-        "- NEVER say goodbye more than once — one farewell + endCall, that's it",
+        "- When the system says goodbye or the interaction is complete, say a SINGLE quick goodbye and call end_call IMMEDIATELY in the SAME turn",
+        '- Example: "Thanks, goodbye!" → end_call',
+        "- Do NOT wait for their response after saying goodbye — call end_call right away",
+        "- NEVER say goodbye more than once — one farewell + end_call, that's it",
         "- If transferred to hold music or silence for more than 10 seconds, stay on the line",
         "",
         "## If transferred to a human",
@@ -325,57 +239,19 @@ export class VoiceService {
       );
     } else {
       parts.push(
-        "# Opening",
-        "Your FIRST message must combine a brief greeting with your question — do NOT greet and then wait.",
-        ownerName
-          ? `Example: "Hi ${request.recipientName ?? "there"}, calling on behalf of ${ownerName}. What time are you heading to the hospital?"`
-          : `Example: "Hi ${request.recipientName ?? "there"}. What time are you heading to the hospital?"`,
-        "",
-        "# How to talk",
-        "- Be casual and quick, like texting but out loud",
-        "- One sentence per turn, two max",
-        "- Use words like gotcha, cool, right, sounds good",
-        "- Match their energy",
-        "",
-        "# Flow",
-        "1. Wait for them to say hello, then greet + ask your question",
-        "2. Wait for their answer — do NOT keep talking",
-        "3. When they answer, you MUST say your confirmation out loud BEFORE calling endCall",
-        "",
-        "## CRITICAL: Always speak before ending the call",
-        "You MUST always include spoken text in your response. NEVER call endCall without also saying something.",
-        "Every response must have content (spoken words). A tool call alone with no text is WRONG.",
-        "",
-        "## Response template (FOLLOW THIS EXACTLY):",
-        '- They say "7:30" → You say: "Gotcha, 7:30. Thanks, bye!" then use the endCall tool',
-        '- They say "Tuesday" → You say: "Cool, Tuesday. Thanks, bye!" then use the endCall tool',
-        '- They say "yes" → You say: "Great, sounds good. Thanks, bye!" then use the endCall tool',
-        '- They say "at the park" → You say: "Right, the park. Thanks, bye!" then use the endCall tool',
-        "",
-        "IMPORTANT: Never say the words 'endCall' or 'call endCall' out loud. The endCall tool is a silent action, not spoken words.",
-        "",
-        "WRONG (never do this):",
-        '- Calling endCall without saying anything first',
-        '- Just saying "Goodbye" without confirming their answer',
-        '- Saying "OK" then waiting, then saying "bye" in a separate turn',
-        "",
-        "# Ending the call",
-        "- ALWAYS speak your farewell out loud AND call the endCall tool in the same turn",
-        "- If they say bye first, respond with a quick bye AND call endCall",
+        "# Style",
+        "Casual and brief. One or two sentences per turn. Match their energy.",
         "",
         "# Rules",
-        "- Never ask 'how are you'",
-        "- Never say goodbye or thanks more than once",
-        "- If they seem confused about who's calling, briefly explain you're an AI assistant calling on behalf of the owner",
-        "- Never mention that you're an AI unless directly asked",
+        "- Wait for the person to say hello, then greet them and ask your question",
+        "- When they answer your question, repeat back what they said, say thanks, and call end_call",
+        '  Example: they say "scrambled eggs" → you say "Gotcha, scrambled eggs. Thanks, bye!" then end_call',
+        "- If you don't understand, ask ONE clarifying question",
+        "- If the conversation loops or they keep repeating themselves, say bye and end_call",
+        "- Never mention you're an AI unless asked directly",
         "",
-        "# If put on hold or transferred",
-        "- If put on hold, wait silently",
-        "- If transferred to someone new, re-introduce yourself and state your purpose briefly",
-        "",
-        "# If you reach voicemail",
-        `- Leave a brief message: "${ownerName || "Hi"} asked me to call. ${request.context ? "It's about: " + request.context.slice(0, 80) + "." : ""} Please call back when you can."`,
-        "- Then call endCall immediately",
+        "# Voicemail",
+        `If you reach voicemail: "${ownerName || "Hi"} asked me to call.${request.context ? " It's about: " + request.context.slice(0, 80) + "." : ""} Please call back when you can." Then end_call.`,
       );
     }
 
@@ -383,34 +259,88 @@ export class VoiceService {
   }
 
   private buildGreeting(request: VoiceCallRequest): string | undefined {
+    // IVR: no first message, wait and listen
+    if (this.isIvrCall(request)) return undefined;
+
     const ownerName = process.env["OWNER_NAME"] ?? "";
     const hi = request.recipientName ? `Hi ${request.recipientName}` : "Hi there";
     const behalf = ownerName ? `, calling on behalf of ${ownerName}` : "";
 
-    // For calls with context, return undefined to let the LLM generate
-    // a combined greeting + question (avoids pause between intro and question)
-    if (request.context) return undefined;
-
-    if (request.context?.toLowerCase().includes("remind")) {
-      return `${hi}${behalf}. Quick reminder call.`;
+    if (!request.context) {
+      return `${hi}${behalf}.`;
     }
-    return `${hi}${behalf}.`;
+
+    // Context is often an instruction ("Ask what they're having for breakfast").
+    // Transform it into a natural spoken question for the firstMessage.
+    // The raw context also goes into the system prompt as Call Purpose.
+    const spoken = this.contextToQuestion(request.context);
+    return `${hi}${behalf}. ${spoken}`;
   }
 
-  private parseTranscript(transcriptText: string): TranscriptEntry[] {
-    const entries: TranscriptEntry[] = [];
-    const lines = transcriptText.split("\n").filter(Boolean);
-    for (const line of lines) {
-      const match = line.match(/^(AI|User):\s*(.+)$/i);
-      if (match) {
-        entries.push({
-          role: match[1].toLowerCase() === "ai" ? "assistant" : "user",
-          text: match[2],
-          timestamp: Date.now(),
-        });
-      }
+  /**
+   * Transform instruction-style context into a natural spoken question.
+   * "Ask what they are having for breakfast" → "What are you having for breakfast?"
+   * "Remind them about the meeting at 3" → "Just a reminder about the meeting at 3."
+   * "What time is dinner?" → "What time is dinner?" (already a question, pass through)
+   */
+  private contextToQuestion(context: string): string {
+    let q = context.trim();
+
+    // If it already starts with a question word, it's likely already phrased as a question
+    if (/^(what|when|where|who|why|how|is|are|do|does|can|could|will|would|did|have|has)\b/i.test(q)) {
+      if (!/[.!?]$/.test(q)) q += "?";
+      return q;
     }
-    return entries;
+
+    // Strip instruction prefixes and adjust pronouns
+    const askMatch = q.match(/^ask\s+(?:them\s+)?(.+)$/i);
+    if (askMatch) {
+      q = askMatch[1];
+      // Pronoun swap: third person → second person
+      q = q.replace(/\b(what|where|when|how|why)\s+their\s+(\w+)\s+are\b/gi, (_m, w, n) => `${w} are your ${n}`);
+      q = q.replace(/\b(what|where|when|how|why)\s+they\s+are\b/gi, (_m, w) => `${w} are you`);
+      q = q.replace(/\b(what|where|when|how|why)\s+they(?:'re|\s+were)\b/gi, (_m, w) => `${w} were you`);
+      q = q.replace(/\bthey are\b/gi, "you are");
+      q = q.replace(/\bthey're\b/gi, "you're");
+      q = q.replace(/\bthey\b/gi, "you");
+      q = q.replace(/\bthem\b/gi, "you");
+      q = q.replace(/\btheir\b/gi, "your");
+      // "if you need..." → "Do you need..."
+      if (/^if\s+you\b/i.test(q)) {
+        q = q.replace(/^if\s+you\b/i, "Do you");
+      }
+      q = q.charAt(0).toUpperCase() + q.slice(1);
+      if (!/[.!?]$/.test(q)) q += "?";
+      return q;
+    }
+
+    // "Remind them about X" → "Just a reminder about X."
+    const remindMatch = q.match(/^remind\s+(?:them\s+)?(.+)$/i);
+    if (remindMatch) {
+      const body = remindMatch[1];
+      q = /^(about|that|to)\b/i.test(body)
+        ? `Just a reminder ${body}`
+        : `Just a reminder, ${body}`;
+      if (!/[.!?]$/.test(q)) q += ".";
+      return q;
+    }
+
+    // Fallback: use as-is
+    if (!/[.!?]$/.test(q)) q += ".";
+    return q;
+  }
+
+  private parseTranscript(
+    transcriptObject?: Array<{ content: string; role: string; words: Array<{ start?: number }> }>
+  ): TranscriptEntry[] {
+    if (!transcriptObject?.length) return [];
+    return transcriptObject.map((entry) => ({
+      role: entry.role === "agent" ? "assistant" as const : "user" as const,
+      text: entry.content,
+      timestamp: entry.words?.[0]?.start
+        ? Math.round(entry.words[0].start * 1000)
+        : Date.now(),
+    }));
   }
 
   private async monitorCall(callId: string): Promise<void> {
@@ -419,42 +349,36 @@ export class VoiceService {
 
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(
-          `${VAPI_BASE}/call/${activeCall.vapiCallId}`,
-          {
-            headers: { Authorization: `Bearer ${this.config.apiKey}` },
-          }
-        );
+        const retellCall = await this.client.call.retrieve(activeCall.retellCallId);
 
-        if (!response.ok) return; // transient error, keep polling
-
-        const vapiCall = (await response.json()) as VapiCallResponse;
-
-        if (vapiCall.status === "ended") {
+        if (retellCall.call_status === "ended" || retellCall.call_status === "error") {
           clearInterval(pollInterval);
           this.activeCalls.delete(callId);
 
-          const durationSeconds = Math.round(
-            (Date.now() - activeCall.startedAt) / 1000
-          );
+          const durationSeconds = retellCall.duration_ms
+            ? Math.round(retellCall.duration_ms / 1000)
+            : Math.round((Date.now() - activeCall.startedAt) / 1000);
 
-          const transcript = vapiCall.artifact?.transcript
-            ? this.parseTranscript(vapiCall.artifact.transcript)
-            : undefined;
+          const transcript = this.parseTranscript(
+            retellCall.transcript_object as Array<{ content: string; role: string; words: Array<{ start?: number }> }> | undefined
+          );
 
           const result: VoiceCallResult = {
             callId,
             phoneNumber: activeCall.phoneNumber,
-            status: "completed",
+            status: retellCall.call_status === "error" ? "failed" : "completed",
             durationSeconds,
-            transcript,
+            transcript: transcript.length > 0 ? transcript : undefined,
+            error: retellCall.call_status === "error"
+              ? `Call failed: ${retellCall.disconnection_reason ?? "unknown"}`
+              : undefined,
           };
 
           info(
             "voice",
-            `Call ${callId} completed (${durationSeconds}s, ${transcript?.length ?? 0} transcript entries)`
+            `Call ${callId} ${result.status} (${durationSeconds}s, ${transcript.length} transcript entries)`
           );
-          this.onCallStatus?.(callId, "completed", result);
+          this.onCallStatus?.(callId, result.status, result);
         }
       } catch {
         // transient error, keep polling

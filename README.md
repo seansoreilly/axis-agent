@@ -90,25 +90,22 @@ For services not covered by Composio or requiring deeper integration:
 - **Bitwarden** — add, update, or rotate secrets in the Bitwarden vault and sync to the server.
 - **Gmail** — fetch, evaluate, archive, and unsubscribe from emails via IMAP with incremental dual-UID watermark triage.
 
-#### Voice Calling (Vapi)
+#### Voice Calling (Retell.ai)
 
-Outbound phone calls via Vapi REST API with real-time voice AI. Creates calls with an inline assistant config using deepgram/nova-3 STT, openai/gpt-4o-mini LLM, and cartesia/sonic-2 TTS. Supports DTMF for IVR menu navigation.
+Outbound phone calls via Retell.ai SDK with real-time voice AI. Uses a base Retell agent with per-call overrides (`agent_override` + `retell_llm_dynamic_variables`) for dynamic system prompts. LLM: Claude 4.6 Sonnet. STT: Deepgram with `en-AU` locale.
 
-- **Australian female voice** by default (Cartesia "Australian Woman")
+- **Wait-for-human** — `start_speaker: "user"` ensures the AI waits for the recipient to say hello before speaking
+- **Natural greetings** — `contextToQuestion()` transforms instruction-style context ("Ask what they're having") into natural spoken questions
 - **Agent-initiated calls** — the agent can decide to call someone based on conversation context (confirms with user first, looks up contacts automatically)
 - **Telegram integration** — `/call Sean [context]` or `/call +61412345678 [context]` — accepts contact names or phone numbers
 - **HTTP API** — `POST /calls` with `{ "phoneNumber": "+61...", "context": "...", "recipientName": "..." }`
-- **Call transcripts** — Vapi captures the full transcript, delivered to Telegram when the call ends
+- **Call transcripts** — Retell captures structured transcript with word-level timestamps, delivered to Telegram when the call ends
 - **Call monitoring** — tracks active calls via status polling, 10-minute safety timeout
 - **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations, with owner context (`OWNER_NAME` env var)
-- **DTMF support** — can navigate IVR menus during calls with explicit keypad tool usage
-- **Natural conversation** — endCall tool for clean call termination, smart endpointing with punctuation-aware transcription for minimal response latency
-- **Voicemail detection** — Vapi-powered detection with automatic voicemail message and call termination
-- **IVR-aware mode** — separate turn-taking config for automated systems (patient endpointing, listen-first behavior) vs human calls (fast, casual)
-- **Backchannel handling** — acknowledgement phrases ("yeah", "uh-huh", "mm-hmm") ignored during interruption detection
-- **Hold/transfer support** — waits on hold, re-introduces when transferred to a new person
+- **Voicemail detection** — automatic voicemail message and call termination via `end_call` tool
+- **IVR-aware mode** — separate prompt for automated systems (listen-first, DTMF via voice) vs human calls (fast, casual)
 
-Requires: `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_DTMF_TOOL_ID`. Optional: `CARTESIA_VOICE_ID`, `OWNER_NAME`.
+Requires: `RETELL_API_KEY`, `RETELL_PHONE_NUMBER`, `RETELL_AGENT_ID`. Optional: `RETELL_VOICE_ID`, `OWNER_NAME`.
 
 #### Google Workspace CLI (`gws`) — Details
 
@@ -297,7 +294,7 @@ DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh --self-heal
 | `/forget key` | Remove a fact |
 | `/memories` | List all facts |
 | `/status` | Show uptime, sessions, model, cost, tasks |
-| `/call <name or +number> [context]` | Make an outbound voice call via Vapi |
+| `/call <name or +number> [context]` | Make an outbound voice call via Retell |
 | `/post [notes]` | Create a Facebook post using recently uploaded photos |
 
 Any other message is sent to Claude as a prompt. Sessions persist — follow-up messages maintain conversation context.
@@ -366,7 +363,7 @@ src/
   prompt-builder.ts     # Tiered system prompt construction (core + extended sections)
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
-  voice.ts              # Voice calling service (Vapi REST API, call monitoring)
+  voice.ts              # Voice calling service (Retell.ai SDK, call monitoring)
 scripts/
   sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault

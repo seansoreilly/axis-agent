@@ -46,11 +46,11 @@ async function main(): Promise<void> {
     jobs
   );
 
-  // Set up voice calling (optional — disabled if VAPI_API_KEY not set)
+  // Set up voice calling (optional — disabled if RETELL_API_KEY not set)
   let voiceService: VoiceServiceType | undefined;
-  if (config.vapi) {
+  if (config.retell) {
     const { VoiceService } = await import("./voice.js");
-    voiceService = new VoiceService(config.vapi, store, (callId, status, result) => {
+    voiceService = new VoiceService(config.retell, store, (callId, status, result) => {
       if (primaryUser && telegram) {
         let msg: string;
         if (status === "completed") {

@@ -77,7 +77,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
       "",
       "**After lookup:**",
       "1. **Check freshness:** If the contact or specific field was last updated more than 1 year ago, warn the user (e.g. \"Note: this number was last updated 2 years ago — want me to confirm it's correct?\"). Wait for confirmation before proceeding.",
-      "2. Use the appropriate method: Twilio skill for SMS, Gmail skill for email, voice call for phone calls — read SKILL.md for skill usage",
+      "2. Use the appropriate method: Twilio skill for SMS/text, Gmail skill for email, /call command or gateway /calls endpoint for voice calls — read SKILL.md for skill usage",
       "You have skills installed in `.claude/skills/`. Run `ls .claude/skills/` to discover them, then read the SKILL.md for usage.",
     ],
   },

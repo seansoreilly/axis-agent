@@ -1,11 +1,10 @@
 import { existsSync, mkdirSync } from "node:fs";
 
-export interface VapiConfig {
+export interface RetellConfig {
   apiKey: string;
-  phoneNumberId: string;
-  assistantId?: string;
-  dtmfToolId: string;
-  ttsVoiceId?: string;
+  phoneNumber: string; // E.164 format (e.g. "+14157774444")
+  agentId: string; // Base Retell agent ID
+  voiceId?: string; // Override default voice
 }
 
 export interface Config {
@@ -26,7 +25,7 @@ export interface Config {
   memoryDir: string;
   owntracksToken?: string;
   gatewayApiToken?: string;
-  vapi?: VapiConfig;
+  retell?: RetellConfig;
 }
 
 function requireEnv(key: string): string {
@@ -61,16 +60,15 @@ export function loadConfig(): Config {
     );
   }
 
-  // Vapi voice calling config (optional — feature disabled if VAPI_API_KEY not set)
-  let vapi: VapiConfig | undefined;
-  const vapiApiKey = process.env["VAPI_API_KEY"];
-  if (vapiApiKey) {
-    vapi = {
-      apiKey: vapiApiKey,
-      phoneNumberId: requireEnv("VAPI_PHONE_NUMBER_ID"),
-      assistantId: process.env["VAPI_ASSISTANT_ID"],
-      dtmfToolId: requireEnv("VAPI_DTMF_TOOL_ID"),
-      ttsVoiceId: process.env["CARTESIA_VOICE_ID"],
+  // Retell voice calling config (optional — feature disabled if RETELL_API_KEY not set)
+  let retell: RetellConfig | undefined;
+  const retellApiKey = process.env["RETELL_API_KEY"];
+  if (retellApiKey) {
+    retell = {
+      apiKey: retellApiKey,
+      phoneNumber: requireEnv("RETELL_PHONE_NUMBER"),
+      agentId: requireEnv("RETELL_AGENT_ID"),
+      voiceId: process.env["RETELL_VOICE_ID"],
     };
   }
 
@@ -92,6 +90,6 @@ export function loadConfig(): Config {
     memoryDir,
     owntracksToken: process.env["OWNTRACKS_TOKEN"],
     gatewayApiToken: process.env["GATEWAY_API_TOKEN"],
-    vapi,
+    retell,
   };
 }

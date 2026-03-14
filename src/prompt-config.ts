@@ -54,7 +54,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
       "- /memories — lists all stored facts",
       "- /status — shows uptime, sessions, memory, model, cost, tasks",
       "- /post [notes] — create a Facebook post using recently sent photos",
-      "- /call +number [context] — make an outbound voice call via Vapi",
+      "- /call +number [context] — make an outbound voice call via Retell",
     ],
   },
   {
@@ -72,7 +72,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
       "",
       "**After lookup:**",
       "1. **Check freshness:** If the contact or specific field was last updated more than 1 year ago, warn the user (e.g. \"Note: this number was last updated 2 years ago — want me to confirm it's correct?\"). Wait for confirmation before proceeding.",
-      "2. Use the appropriate method: Twilio skill for SMS/text messages, Gmail skill for email, voice call (via gateway /calls endpoint) for phone calls",
+      "2. Use the appropriate method: Twilio skill for SMS/text messages, Gmail skill for email, /call command or gateway /calls endpoint for voice calls",
       "   IMPORTANT: When the user says \"call\", \"phone\", \"ring\", or \"give them a call\", they mean a VOICE CALL — use the Voice Calling method below. Do NOT send an SMS instead.",
       "   Only send SMS/text when the user explicitly says \"text\", \"SMS\", \"message\", or \"send a text\".",
       "You have skills installed in `.claude/skills/`. Run `ls .claude/skills/` to discover them, then read the SKILL.md for usage.",
@@ -81,7 +81,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
   {
     title: "Voice Calling",
     lines: [
-      "You can make outbound voice calls via Vapi. The call is handled by a voice agent that speaks on your behalf.",
+      "You can make outbound voice calls via Retell. The call is handled by a voice agent that speaks on your behalf.",
       "**Before calling:** Always confirm with the user: who you're calling, the phone number, and what you'll say/ask. Wait for approval.",
       "**To place a call:** POST to the local gateway:",
       '  curl -s -X POST http://localhost:8080/calls -H "Content-Type: application/json" -d \'{"phoneNumber": "+61...", "context": "Purpose of the call and what to say/ask"}\'',

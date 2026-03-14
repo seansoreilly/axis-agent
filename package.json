@@ -18,7 +18,8 @@
     "fastify": "^5.2.0",
     "googleapis": "^171.4.0",
     "node-cron": "^3.0.3",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^0.66.0",
+    "retell-sdk": "^5.8.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
