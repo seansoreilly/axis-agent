@@ -115,6 +115,10 @@ Usage: `gws <service> <resource> <method> --params '{...}'` — supports Gmail, 
 
 Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-mcp). Enables the agent to navigate JS-rendered pages, fill forms, click buttons, take screenshots, and generate PDFs — things WebFetch can't do. The agent automatically chooses WebFetch for static content and Playwright for dynamic/interactive pages.
 
+#### Context7 MCP (Library Documentation)
+
+Up-to-date library documentation lookup via [@upstash/context7-mcp](https://github.com/upstash/context7). Resolves library names to Context7-compatible IDs and fetches current docs and examples on demand, avoiding reliance on potentially outdated training data.
+
 ### Memory System
 - Structured facts with categories: personal, work, preference, system, general
 - Automatic category inference from key names
@@ -190,7 +194,7 @@ Edit `.env` with general config (ports, model settings, paths). Secrets (API key
 
 ```bash
 PORT=8080
-CLAUDE_MODEL=claude-sonnet-4-6
+CLAUDE_MODEL=claude-opus-4-6
 CLAUDE_MAX_TURNS=25
 CLAUDE_MAX_BUDGET_USD=5
 CLAUDE_WORK_DIR=/home/ubuntu/workspace
