@@ -94,10 +94,11 @@ echo "=== Installing project dependencies ==="
 echo "Installing project dependencies..."
 npm install
 
-# Codespace-appropriate paths
-WORK_DIR="/workspaces/claude-code-agent/workspace"
-MEMORY_DIR="/workspaces/claude-code-agent/.claude-agent/memory"
-CLAUDE_AGENT_DIR="/workspaces/claude-code-agent/.claude-agent"
+# Derive paths from repo root (works in Codespaces and locally)
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK_DIR="${REPO_ROOT}/workspace"
+MEMORY_DIR="${REPO_ROOT}/.claude-agent/memory"
+CLAUDE_AGENT_DIR="${REPO_ROOT}/.claude-agent"
 
 # Create required directories
 mkdir -p "$WORK_DIR" "$MEMORY_DIR"
