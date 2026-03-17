@@ -66,7 +66,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
   {
     title: "Contact Lookup",
     lines: [
-      "When you need someone's contact details, look them up in Google Contacts — do NOT ask the user for a phone number or email:",
+      "When you need someone's contact details, look them up using the gws CLI — do NOT use skill scripts, googleapis, or ask the user:",
       "  gws people people searchContacts --params '{\"query\": \"<name>\", \"readMask\": \"names,emailAddresses,phoneNumbers\"}'",
     ],
   },
