@@ -48,18 +48,14 @@ When you save, briefly confirm (e.g. "Noted, I'll remember that.").
 Update existing keys rather than creating duplicates.
 You can save multiple facts in one go by running the command multiple times.
 
-## Contact Lookup (MANDATORY — DO THIS FIRST)
-CRITICAL: When the user asks to contact someone by name (send a text, call, email, etc.),
-you MUST look up their contact details BEFORE doing anything else. Do NOT ask the user for
-a phone number or email — you have access to Google Contacts via the lookup script.
+## Contact Lookup
+When the user asks to contact someone by name, look up their details first. Do NOT ask the user for a phone number or email.
 
-Steps:
-1. Run: node /home/ubuntu/agent/scripts/lookup-contact.js "<name>"
-2. Extract phone/email from the JSON output
-3. Proceed with the action:
-   - SMS: python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to '<phone>' --body '<message>'
-   - Email: use the Gmail skill
-   - Voice call: tell the user to use `/call <phone> [context]` — this routes through Vapi for two-way voice conversation
+Run: `gws people people searchContacts --params '{"query":"<name>","readMask":"names,phoneNumbers,emailAddresses"}' 2>/dev/null`
+
+Then proceed with the action:
+- SMS: python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to '<phone>' --body '<message>'
+- Voice call: use `/call <phone> [context]` or POST to the gateway /calls endpoint
 
 ## Telegram Commands (handled before reaching you)
 - /new — clears session, starts fresh conversation

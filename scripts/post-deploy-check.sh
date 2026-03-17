@@ -79,7 +79,7 @@ else
   fi
 fi
 
-# --- 6. Google Contacts (gws) auth check ---
+# --- 6. gws People API auth check ---
 GWS_RESULT=$(ssh $SSH_OPTS "$REMOTE_HOST" 'gws people people searchContacts --params '"'"'{"query":"test","readMask":"names"}'"'"' 2>&1' || true)
 if echo "$GWS_RESULT" | grep -q '"error"'; then
   GWS_MSG=$(echo "$GWS_RESULT" | grep -oP '"message":\s*"\K[^"]+' || echo "unknown")
@@ -143,7 +143,7 @@ else
   WEBHOOK_RESP=$(ssh $SSH_OPTS "$REMOTE_HOST" "curl -sf -X POST http://localhost:8080/webhook \
       -H 'Content-Type: application/json' \
       -H 'Authorization: Bearer $GATEWAY_TOKEN' \
-      -d '{\"prompt\": \"Look up Sean O Reilly in Google Contacts and return their phone number. Be concise.\"}'" 2>/dev/null || echo '{"error":"request_failed"}')
+      -d '{\"prompt\": \"Look up Sean O Reilly phone number using gws CLI and return it. Be concise.\"}'" 2>/dev/null || echo '{"error":"request_failed"}')
 
   JOB_ID=$(echo "$WEBHOOK_RESP" | grep -oP '"jobId":"\K[^"]+' || true)
 

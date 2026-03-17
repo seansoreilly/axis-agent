@@ -147,31 +147,20 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════
-# 4. Google Contacts Lookup
+# 4. gws People API (contact lookup)
 # ═══════════════════════════════════════════════════════════
-echo "── Google Contacts ──────────────────────────────────────"
+echo "── gws People API ───────────────────────────────────────"
 
-CONTACT_RESULT=$(remote_sourced "node scripts/lookup-contact.js \"Joanne O'Reilly\"")
-if echo "$CONTACT_RESULT" | grep -qi "Joanne"; then
-  PHONE=$(echo "$CONTACT_RESULT" | grep -oP '"number":\s*"\K[^"]+' | head -1 || echo "?")
-  EMAIL=$(echo "$CONTACT_RESULT" | grep -oP '"email":\s*"\K[^"]+' | head -1 || echo "?")
-  pass "contact lookup: Joanne O'Reilly (phone: $PHONE, email: $EMAIL)"
-  info "$CONTACT_RESULT"
+GWS_CONTACTS=$(remote_sourced "gws people people searchContacts --params '{\"query\":\"Joanne\",\"readMask\":\"names,phoneNumbers,emailAddresses\"}' 2>/dev/null")
+if echo "$GWS_CONTACTS" | grep -qi "Joanne"; then
+  pass "gws contact search: 'Joanne' found"
+  info "$GWS_CONTACTS"
 else
-  if echo "$CONTACT_RESULT" | grep -qi "credential\|auth\|token"; then
-    warn "contacts: credentials not configured"
+  if echo "$GWS_CONTACTS" | grep -qi "error\|auth\|credential"; then
+    warn "gws: credentials not configured"
   else
-    fail "contact lookup: $(echo "$CONTACT_RESULT" | head -2)"
+    fail "gws contact search: $(echo "$GWS_CONTACTS" | head -2)"
   fi
-fi
-
-# Test a search that should return multiple results
-MULTI_RESULT=$(remote_sourced 'node scripts/lookup-contact.js "Sean"')
-MATCH_COUNT=$(echo "$MULTI_RESULT" | grep -oP '"name"' | wc -l)
-if [ "$MATCH_COUNT" -gt 0 ]; then
-  pass "contact search: 'Sean' returned $MATCH_COUNT result(s)"
-else
-  warn "contact search: 'Sean' returned 0 results"
 fi
 
 echo ""

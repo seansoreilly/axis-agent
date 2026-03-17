@@ -53,7 +53,6 @@ declare -A JSON_CREDS=(
 
 # Optional JSON credentials
 declare -A JSON_CREDS_OPTIONAL=(
-  [BW_GOOGLE_CONTACTS_TOKEN_ID]="${CLAUDE_AGENT_DIR}/google-contacts-token.json|google-contacts-token"
   [BW_CLAUDE_OAUTH_ID]="${CLAUDE_DIR}/.credentials.json|claude-oauth"
 )
 

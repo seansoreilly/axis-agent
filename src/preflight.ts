@@ -111,7 +111,7 @@ export async function preflight(opts: {
     });
   }
 
-  // 7. Check Google Contacts (gws) is working
+  // 7. Check gws People API is working
   try {
     const gwsResult = await new Promise<string>((resolve, reject) => {
       execFile(
@@ -130,7 +130,7 @@ export async function preflight(opts: {
       checks.push({
         name: "gws-contacts",
         passed: false,
-        message: `Google Contacts auth failed: ${parsed.error.message ?? "unknown error"}. Re-run OAuth flow (see reference_gws_oauth_flow.md).`,
+        message: `gws People API auth failed: ${parsed.error.message ?? "unknown error"}. Check gws OAuth credentials.`,
       });
     } else {
       checks.push({ name: "gws-contacts", passed: true });

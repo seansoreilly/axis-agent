@@ -27,9 +27,9 @@ Append entries below when a skill creation succeeds, fails, or requires correcti
 - **Lesson**: Twilio regional deployments (AU1, IE1, etc.) require API Key auth. When building Twilio integrations, always prefer API Key credentials over Account SID + Auth Token.
 
 ### 2026-03-05 - twilio - correction
-- **What happened**: Agent ignored the contact lookup instructions and asked the user for phone numbers instead of looking them up via Google Contacts.
+- **What happened**: Agent ignored the contact lookup instructions and asked the user for phone numbers instead of looking them up via gws CLI.
 - **Root cause**: SOUL.md was loaded as the core prompt, completely bypassing the built-in fallback prompt in `agent.ts` which contained the contact lookup instructions. SOUL.md had no contact lookup section.
-- **Fix applied**: Added the "Contact Lookup (MANDATORY)" section to SOUL.md with explicit steps for lookup → extract → send.
+- **Fix applied**: Added the "Contact Lookup" section to SOUL.md with gws CLI command for lookup → extract → send.
 - **Lesson**: When the agent uses SOUL.md for personality, ALL critical instructions must be in SOUL.md — the built-in fallback prompt in agent.ts is never used. Any new workflow instructions must be added to SOUL.md, not just agent.ts.
 
 ### 2026-03-05 - general - lesson

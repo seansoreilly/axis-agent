@@ -17,7 +17,6 @@ BW_GMAIL_ID="${BW_GMAIL_ID:?Set BW_GMAIL_ID env var}"
 BW_FACEBOOK_ID="${BW_FACEBOOK_ID:?Set BW_FACEBOOK_ID env var}"
 BW_GOOGLE_SA_ID="${BW_GOOGLE_SA_ID:?Set BW_GOOGLE_SA_ID env var}"
 BW_GOOGLE_CREDS_ID="${BW_GOOGLE_CREDS_ID:?Set BW_GOOGLE_CREDS_ID env var}"
-BW_GOOGLE_CONTACTS_TOKEN_ID="${BW_GOOGLE_CONTACTS_TOKEN_ID:-}"
 BW_CLAUDE_OAUTH_ID="${BW_CLAUDE_OAUTH_ID:-}"
 
 # Env var name → Bitwarden item name (looked up by name in folder)
@@ -130,9 +129,6 @@ push_secret "$BW_GMAIL_ID"       "$REMOTE_AGENT_DIR/gmail_app_password.json"    
 push_secret "$BW_FACEBOOK_ID"    "$REMOTE_CLAUDE_DIR/facebook-page-token.json"        "facebook"
 push_secret "$BW_GOOGLE_SA_ID"   "$REMOTE_CLAUDE_DIR/google-service-account.json"     "google-service-account"
 push_secret "$BW_GOOGLE_CREDS_ID" "$REMOTE_CLAUDE_DIR/google-credentials.json"        "google-credentials"
-if [ -n "$BW_GOOGLE_CONTACTS_TOKEN_ID" ]; then
-  push_secret "$BW_GOOGLE_CONTACTS_TOKEN_ID" "$REMOTE_CLAUDE_DIR/google-contacts-token.json" "google-contacts-token"
-fi
 if [ -n "$BW_CLAUDE_OAUTH_ID" ]; then
   push_secret "$BW_CLAUDE_OAUTH_ID" "/home/ubuntu/.claude/.credentials.json" "claude-oauth"
 fi

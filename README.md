@@ -153,7 +153,7 @@ Run `bash scripts/integration-test.sh` against the deployed instance. Tests perf
 - **Service health** — systemd status, gateway `/health`
 - **Gateway webhook** — submit prompts via HTTP, verify agent execution
 - **Email triage** — IMAP fetch, watermark state
-- **Google Contacts** — lookup by name, multi-result search
+- **gws People API** — contact lookup via `gws people people searchContacts`
 - **Trello** — list boards, read cards from a board
 - **Google Calendar** — iCal fetch (7-day and 30-day windows)
 - **Memory/admin** — admin status, job queue, scheduled tasks, metrics
@@ -386,7 +386,6 @@ scripts/
   self-heal.sh          # Auto-restart service if inactive (systemd timer)
   update-sdk.sh         # Daily cron to update Agent SDK and restart if changed
   remember.js           # CLI for persistent fact CRUD
-  lookup-contact.js     # Google Contacts lookup via People API
   refresh-token.sh      # Claude OAuth token refresh (runs via systemd timer)
   refresh-token.py      # Token refresh logic (called by refresh-token.sh)
   refresh-google-token.sh  # Google OAuth token keep-alive (cron, every 3 days)
@@ -399,7 +398,7 @@ scripts/
   commit-agent/         # Safe git commit for the deployed agent instance
   bitwarden/            # Secret management via Bitwarden vault
   google-calendar/      # Google Calendar integration
-  google-contacts/      # Google Contacts backup, analysis, cleanup, dedup via People API
+  gws/                  # Google Workspace CLI — contacts, calendar, gmail, drive, sheets
   review-claude-code/   # Review SDK/CLI updates and identify refactoring opportunities
   skill-generator/      # Meta-skill: structured template + learning log for creating new skills
 .github/
