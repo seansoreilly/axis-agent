@@ -140,12 +140,11 @@ GATEWAY_TOKEN=$(ssh $SSH_OPTS "$REMOTE_HOST" "grep -oP 'GATEWAY_API_TOKEN=\K.*' 
 if [ -z "$GATEWAY_TOKEN" ]; then
   echo "  SKIP: e2e contact lookup (no GATEWAY_API_TOKEN configured)"
 else
-  # Submit contact lookup prompt via webhook
-  WEBHOOK_RESP=$(ssh $SSH_OPTS "$REMOTE_HOST" \
-    "curl -sf -X POST http://localhost:8080/webhook \
+  # Submit contact lookup prompt via webhook (use heredoc to avoid apostrophe quoting issues)
+  WEBHOOK_RESP=$(ssh $SSH_OPTS "$REMOTE_HOST" "curl -sf -X POST http://localhost:8080/webhook \
       -H 'Content-Type: application/json' \
       -H 'Authorization: Bearer $GATEWAY_TOKEN' \
-      -d '{\"prompt\": \"Look up Sean O'\\''Reilly in Google Contacts and return their phone number. Be concise.\"}'" 2>/dev/null || echo '{"error":"request_failed"}')
+      -d '{\"prompt\": \"Look up Sean O Reilly in Google Contacts and return their phone number. Be concise.\"}'" 2>/dev/null || echo '{"error":"request_failed"}')
 
   JOB_ID=$(echo "$WEBHOOK_RESP" | grep -oP '"jobId":"\K[^"]+' || true)
 
