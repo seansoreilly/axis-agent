@@ -368,6 +368,8 @@ src/
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
   voice.ts              # Voice calling service (Retell.ai SDK, call monitoring)
+  task-monitor.ts       # Active task tracking with elapsed time and status
+  team-coordinator.ts   # Parallel agent orchestration (fan-out/fan-in)
 scripts/
   sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
