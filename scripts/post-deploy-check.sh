@@ -79,7 +79,18 @@ else
   fi
 fi
 
-# --- 6. Skill health checks (dry-run validation on remote) ---
+# --- 6. Google Contacts (gws) auth check ---
+GWS_RESULT=$(ssh $SSH_OPTS "$REMOTE_HOST" 'gws people people searchContacts --params '"'"'{"query":"test","readMask":"names"}'"'"' 2>&1' || true)
+if echo "$GWS_RESULT" | grep -q '"error"'; then
+  GWS_MSG=$(echo "$GWS_RESULT" | grep -oP '"message":\s*"\K[^"]+' || echo "unknown")
+  fail "gws contacts auth: $GWS_MSG"
+elif echo "$GWS_RESULT" | grep -q '^\s*{'; then
+  pass "gws contacts auth OK"
+else
+  fail "gws contacts: unexpected response: $(echo "$GWS_RESULT" | head -1)"
+fi
+
+# --- 7. Skill health checks (dry-run validation on remote) ---
 echo ""
 echo "  Skill checks..."
 
@@ -120,6 +131,67 @@ for check in "${SKILL_CHECKS[@]}"; do
     fi
   fi
 done
+
+# --- 8. End-to-end contact lookup regression test (via gateway webhook → agent → Telegram) ---
+echo ""
+echo "  E2E regression tests..."
+
+GATEWAY_TOKEN=$(ssh $SSH_OPTS "$REMOTE_HOST" "grep -oP 'GATEWAY_API_TOKEN=\K.*' /home/ubuntu/agent/.env" 2>/dev/null || true)
+if [ -z "$GATEWAY_TOKEN" ]; then
+  echo "  SKIP: e2e contact lookup (no GATEWAY_API_TOKEN configured)"
+else
+  # Submit contact lookup prompt via webhook
+  WEBHOOK_RESP=$(ssh $SSH_OPTS "$REMOTE_HOST" \
+    "curl -sf -X POST http://localhost:8080/webhook \
+      -H 'Content-Type: application/json' \
+      -H 'Authorization: Bearer $GATEWAY_TOKEN' \
+      -d '{\"prompt\": \"Look up Sean O'\\''Reilly in Google Contacts and return their phone number. Be concise.\"}'" 2>/dev/null || echo '{"error":"request_failed"}')
+
+  JOB_ID=$(echo "$WEBHOOK_RESP" | grep -oP '"jobId":"\K[^"]+' || true)
+
+  if [ -z "$JOB_ID" ]; then
+    fail "e2e contact lookup: webhook did not return a jobId: $WEBHOOK_RESP"
+  else
+    echo "  Waiting for contact lookup job $JOB_ID..."
+    E2E_STATUS="queued"
+    E2E_ATTEMPTS=0
+    E2E_MAX=60  # 60 × 5s = 5 min max
+
+    while [ "$E2E_STATUS" != "succeeded" ] && [ "$E2E_STATUS" != "failed" ] && [ "$E2E_ATTEMPTS" -lt "$E2E_MAX" ]; do
+      sleep 5
+      E2E_ATTEMPTS=$((E2E_ATTEMPTS + 1))
+      JOBS_RESP=$(ssh $SSH_OPTS "$REMOTE_HOST" \
+        "curl -sf http://localhost:8080/admin/jobs \
+          -H 'Authorization: Bearer $GATEWAY_TOKEN'" 2>/dev/null || echo '{}')
+      E2E_STATUS=$(echo "$JOBS_RESP" | grep -oP "\"id\":\"$JOB_ID\"[^}]*\"status\":\"\\K[^\"]*" || echo "unknown")
+    done
+
+    if [ "$E2E_STATUS" = "succeeded" ]; then
+      # Check the Telegram message for auth errors
+      RESULT_TEXT=$(echo "$JOBS_RESP" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for j in data.get('jobs', []):
+    if j.get('id') == '$JOB_ID':
+        print(j.get('resultText', '') or '')
+        break
+" 2>/dev/null || echo "")
+
+      if echo "$RESULT_TEXT" | grep -qi "invalid_grant\|authentication error\|auth.*fail\|OAuth.*expired"; then
+        fail "e2e contact lookup: agent returned auth error: $(echo "$RESULT_TEXT" | head -1)"
+      elif echo "$RESULT_TEXT" | grep -qi "phone\|mobile\|\+61\|number"; then
+        pass "e2e contact lookup returned phone number"
+      else
+        echo "  WARN: e2e contact lookup completed but response may not contain a phone number"
+        pass "e2e contact lookup completed (no auth errors)"
+      fi
+    elif [ "$E2E_STATUS" = "failed" ]; then
+      fail "e2e contact lookup: job failed"
+    else
+      fail "e2e contact lookup: timed out after $((E2E_ATTEMPTS * 5))s (status: $E2E_STATUS)"
+    fi
+  fi
+fi
 
 # --- Export for callers ---
 export FAILURE_DETAILS="$FAILURES"
