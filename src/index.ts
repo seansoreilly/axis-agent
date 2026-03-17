@@ -8,6 +8,7 @@ import { ensureValidToken, startTokenRefreshTimer } from "./auth.js";
 import { SqliteStore } from "./persistence.js";
 import { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
+import { preflight } from "./preflight.js";
 import type { VoiceService as VoiceServiceType } from "./voice.js";
 
 async function main(): Promise<void> {
@@ -20,6 +21,17 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
+
+  // Run preflight health checks (non-fatal — logs warnings for failures)
+  const preflightResult = await preflight({
+    memoryDir: config.memoryDir,
+    workDir: config.claude.workDir,
+    telegramBotToken: config.telegram.botToken,
+  });
+  if (!preflightResult.ok) {
+    logError("main", "Preflight checks had failures — continuing with degraded functionality");
+  }
+
   const store = new SqliteStore(config.memoryDir);
   const agent = new Agent(config, store);
   const jobs = new JobService({ store, agent });

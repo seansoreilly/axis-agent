@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ScheduledTask } from "./scheduler.js";
@@ -104,11 +104,16 @@ export class SqliteStore {
   private db: DatabaseSync;
 
   constructor(private readonly dir: string) {
-    mkdirSync(dir, { recursive: true });
-    this.db = new DatabaseSync(join(dir, "agent.db"));
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const dbPath = join(dir, "agent.db");
+    this.db = new DatabaseSync(dbPath);
+    // Restrict database file to owner-only access (contains memory facts, sessions)
+    try { chmodSync(dbPath, 0o600); } catch { /* may not exist yet on first run */ }
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
     this.createTables();
+    // Set permissions after tables are created (ensures file exists)
+    try { chmodSync(dbPath, 0o600); } catch { /* best-effort */ }
     this.migrateLegacyFiles();
   }
 

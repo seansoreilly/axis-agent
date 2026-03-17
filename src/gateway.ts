@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -8,6 +9,12 @@ import type { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
 import { type SqliteStore } from "./persistence.js";
 import type { VoiceService } from "./voice.js";
+
+/** Timing-safe string comparison to prevent timing attacks on token validation. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 interface WebhookBody {
   prompt: string;
@@ -89,7 +96,7 @@ export async function createGateway(
     if (gatewayApiToken) {
       protectedApp.addHook("onRequest", async (request, reply) => {
         const auth = request.headers.authorization ?? "";
-        if (!auth.startsWith("Bearer ") || auth.slice(7) !== gatewayApiToken) {
+        if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), gatewayApiToken)) {
           return reply.status(401).send({ error: "unauthorized" });
         }
       });
@@ -245,11 +252,11 @@ export async function createGateway(
       const auth = request.headers.authorization ?? "";
       let authenticated = false;
       if (auth.startsWith("Bearer ")) {
-        authenticated = auth.slice(7) === owntracksToken;
+        authenticated = safeEqual(auth.slice(7), owntracksToken);
       } else if (auth.startsWith("Basic ")) {
         const decoded = Buffer.from(auth.slice(6), "base64").toString();
         const password = decoded.split(":").slice(1).join(":");
-        authenticated = password === owntracksToken;
+        authenticated = safeEqual(password, owntracksToken);
       }
       if (!authenticated) {
         return reply.status(401).send({ error: "unauthorized" });

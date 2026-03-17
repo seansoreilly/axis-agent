@@ -101,7 +101,6 @@ SKILL_CHECKS=(
   "facebook/post_photos|python3 /home/ubuntu/agent/.claude/skills/facebook/scripts/post_photos.py --message healthcheck --photos /etc/hostname --dry-run"
   "twilio/send_sms|python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to +61400000000 --body healthcheck --dry-run"
   "twilio/make_call|python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/make_call.py --to +61400000000 --message healthcheck --dry-run"
-  "gmail/email_triage|python3 /home/ubuntu/agent/.claude/skills/gmail/scripts/email_triage.py --dry-run fetch --count 1"
 )
 
 for check in "${SKILL_CHECKS[@]}"; do

@@ -54,7 +54,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
       "- /memories — lists all stored facts",
       "- /status — shows uptime, sessions, memory, model, cost, tasks",
       "- /post [notes] — create a Facebook post using recently sent photos",
-      "- /call +number [context] — make an outbound voice call via Retell",
+      "- /call +number [context] — make an outbound voice call via Vapi",
     ],
   },
   {
@@ -81,7 +81,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
   {
     title: "Voice Calling",
     lines: [
-      "You can make outbound voice calls via Retell. The call is handled by a voice agent that speaks on your behalf.",
+      "You can make outbound voice calls via Vapi. The call is handled by a voice agent that speaks on your behalf.",
       "**Before calling:** Always confirm with the user: who you're calling, the phone number, and what you'll say/ask. Wait for approval.",
       "**To place a call:** POST to the local gateway:",
       '  curl -s -X POST http://localhost:8080/calls -H "Content-Type: application/json" -d \'{"phoneNumber": "+61...", "context": "Purpose of the call and what to say/ask"}\'',

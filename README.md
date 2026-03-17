@@ -340,10 +340,14 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 - **Network isolation**: Gateway binds to `127.0.0.1` only — not reachable on public IP. Use Tailscale for remote access.
 - **Telegram auth**: Fail-closed — if `TELEGRAM_ALLOWED_USERS` is empty, the service refuses to start. If set, only listed user IDs can interact.
 - **Systemd sandboxing**: `ProtectHome=read-only`, `ProtectSystem=strict`, `NoNewPrivileges=true`, `PrivateTmp=true`, with explicit `ReadWritePaths` for required directories.
-- **Gateway auth**: Optional `GATEWAY_API_TOKEN` env var enables bearer token authentication on all HTTP endpoints except `/health`. When set, requests must include `Authorization: Bearer <token>`.
+- **Gateway auth**: Optional `GATEWAY_API_TOKEN` env var enables bearer token authentication on all HTTP endpoints except `/health`. When set, requests must include `Authorization: Bearer <token>`. Token comparison uses timing-safe equality to prevent timing attacks.
 - **Security headers**: `@fastify/helmet` adds `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and removes `X-Powered-By`.
 - **Rate limiting**: `@fastify/rate-limit` — 60 req/min global, 5 req/min on `/webhook`, 3 req/min on `/calls`.
 - **Request limits**: Gateway body size capped at 10KB. Scheduler limited to 20 tasks with minimum 5-minute intervals. Per-user message queue capped at 5.
+- **Shell injection prevention**: Scheduler check commands are validated for shell metacharacters and executed via `execFile` (no shell interpretation) to prevent injection attacks.
+- **Command policy enforcement**: A declarative blocked-command policy prevents destructive operations (`rm -rf /`, `shutdown`, `mkfs`, `curl | bash`, etc.) — enforced both via system prompt and scheduler validation.
+- **File permissions**: Credential files written with `mode 0o600` (owner read/write only). SQLite database restricted to `0o600`. Memory directory created with `0o700`.
+- **Preflight health checks**: On startup, verifies directory permissions, OAuth credentials, Telegram API connectivity, and SDK write paths — with actionable error messages instead of cryptic failures.
 - **Timeout protection**: Agent calls abort after configurable timeout (default 10 min). Jobs stuck in "running" state are automatically recovered every 5 minutes.
 - **Error sanitization**: Classified error messages (timeout, rate limit, connection) shown to users; internal details logged server-side only.
 
@@ -365,11 +369,11 @@ src/
   jobs.ts               # Durable job queue (webhook and scheduler-triggered runs)
   metrics.ts            # In-process counters and gauges for operational metrics
   prompt-builder.ts     # Tiered system prompt construction (core + extended sections)
+  policies.ts           # Declarative blocked-command policy (soft + hard enforcement)
+  preflight.ts          # Startup health checks (dirs, auth, Telegram API, SDK paths)
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
   voice.ts              # Voice calling service (Retell.ai SDK, call monitoring)
-  task-monitor.ts       # Active task tracking with elapsed time and status
-  team-coordinator.ts   # Parallel agent orchestration (fan-out/fan-in)
 scripts/
   sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
@@ -383,7 +387,6 @@ scripts/
   update-sdk.sh         # Daily cron to update Agent SDK and restart if changed
   remember.js           # CLI for persistent fact CRUD
   lookup-contact.js     # Google Contacts lookup via People API
-  daily_briefing.py     # Daily briefing script
   refresh-token.sh      # Claude OAuth token refresh (runs via systemd timer)
   refresh-token.py      # Token refresh logic (called by refresh-token.sh)
   refresh-google-token.sh  # Google OAuth token keep-alive (cron, every 3 days)

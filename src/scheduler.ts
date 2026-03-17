@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import type { Agent } from "./agent.js";
@@ -8,6 +8,29 @@ import type { JobService } from "./jobs.js";
 
 /** Max time for a monitor check command to run (10 seconds). */
 const CHECK_COMMAND_TIMEOUT_MS = 10_000;
+
+/**
+ * Shell metacharacters that indicate potential injection.
+ * Check commands should be simple commands, not pipelines or subshells.
+ */
+const SHELL_METACHAR_PATTERN = /[;&|`$(){}!<>\n\\]/;
+
+/**
+ * Validate a check command for safety. Rejects commands containing
+ * shell metacharacters that could enable injection.
+ */
+export function validateCheckCommand(command: string): { valid: boolean; reason?: string } {
+  if (!command.trim()) {
+    return { valid: false, reason: "Check command cannot be empty" };
+  }
+  if (SHELL_METACHAR_PATTERN.test(command)) {
+    return {
+      valid: false,
+      reason: `Check command contains shell metacharacters. Use simple commands only (no pipes, semicolons, backticks, subshells, redirects).`,
+    };
+  }
+  return { valid: true };
+}
 
 const MAX_TASKS = 20;
 const MIN_INTERVAL_SECONDS = 300; // 5 minutes
@@ -32,10 +55,16 @@ type TaskCallback = (taskId: string, result: string) => void;
 /**
  * Run a check command and return its stdout (trimmed).
  * Returns empty string if the command fails or times out.
+ *
+ * Uses execFile to avoid shell interpretation — the command string is split
+ * into argv tokens (respecting single/double quotes) and executed directly.
  */
 export function runCheckCommand(command: string): Promise<string> {
+  const args = splitCommandArgs(command);
+  if (args.length === 0) return Promise.resolve("");
+  const [bin, ...rest] = args;
   return new Promise((resolve) => {
-    exec(command, { timeout: CHECK_COMMAND_TIMEOUT_MS }, (error, stdout) => {
+    execFile(bin, rest, { timeout: CHECK_COMMAND_TIMEOUT_MS }, (error, stdout) => {
       if (error) {
         // Command failed or timed out — treat as "nothing to report"
         resolve("");
@@ -44,6 +73,35 @@ export function runCheckCommand(command: string): Promise<string> {
       resolve((stdout ?? "").trim());
     });
   });
+}
+
+/**
+ * Split a command string into argv tokens, respecting single and double quotes.
+ * Does NOT interpret shell metacharacters — just tokenizes.
+ */
+export function splitCommandArgs(command: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let inSingle = false;
+  let inDouble = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+    } else if (ch === " " && !inSingle && !inDouble) {
+      if (current) {
+        args.push(current);
+        current = "";
+      }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) args.push(current);
+  return args;
 }
 
 export class Scheduler {
@@ -93,6 +151,14 @@ export class Scheduler {
   add(task: ScheduledTask): void {
     if (!cron.validate(task.schedule)) {
       throw new Error(`Invalid cron expression: ${task.schedule}`);
+    }
+
+    // Validate check command for shell injection safety
+    if (task.checkCommand) {
+      const check = validateCheckCommand(task.checkCommand);
+      if (!check.valid) {
+        throw new Error(`Invalid check command: ${check.reason}`);
+      }
     }
 
     // Enforce minimum interval
