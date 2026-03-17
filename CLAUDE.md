@@ -118,26 +118,44 @@ Configured in `.mcp.json` (auto-loaded by the SDK from cwd):
 
 ## Google Workspace CLI (`gws`)
 
-The `@googleworkspace/cli` package is installed globally, providing a unified CLI for all Google Workspace APIs (Drive, Gmail, Calendar, Sheets, Docs, Admin, etc.). It dynamically discovers API endpoints from Google's Discovery Service at runtime.
+The `@googleworkspace/cli` package is installed globally, providing a unified CLI for ALL Google Workspace APIs. This is the **only tool** for Google operations — do NOT use Composio, googleapis scripts, or skill scripts for Google services.
 
-**Auth:** OAuth credentials at `~/.config/gws/credentials.json` (plaintext, auto-refreshes). Do NOT set `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` — it overrides the working OAuth token with a service account that can't access consumer Gmail contacts.
+**Auth:** OAuth credentials at `~/.config/gws/credentials.json` (plaintext, auto-refreshes). Do NOT set `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` — it overrides the working OAuth token with a service account that can't access consumer Gmail contacts. Current scopes: `contacts.readonly`, `gmail.modify`, `calendar`.
+
+**Important:** Always append `2>/dev/null` to gws commands — it emits harmless token cache warnings on stderr that are not errors. The JSON on stdout is always valid.
 
 **Usage pattern:**
 ```bash
-gws <service> <resource> <method> [--params '{"key":"value"}'] [--json '{"body":"..."}']
+gws <service> <resource> <method> [--params '{"key":"value"}'] [--json '{"body":"..."}'] 2>/dev/null
 ```
 
-**Examples:**
+**Contact lookup:**
 ```bash
-gws drive files list --params '{"pageSize": 10}'
-gws sheets spreadsheets values get --params '{"spreadsheetId": "ID", "range": "Sheet1!A1:C10"}'
-gws sheets spreadsheets create --json '{"properties": {"title": "Budget"}}'
-gws schema drive.files.list    # inspect any method's request/response schema
+gws people people searchContacts --params '{"query": "<name>", "readMask": "names,emailAddresses,phoneNumbers"}' 2>/dev/null
 ```
 
-**Flags:** `--dry-run` (preview), `--page-all` (auto-paginate), `--page-limit N`, JSON output by default.
+**Calendar:**
+```bash
+gws calendar +agenda 2>/dev/null                    # today's events
+gws calendar events list --params '{"calendarId": "primary", "timeMin": "2026-03-17T00:00:00Z", "maxResults": 10, "singleEvents": true, "orderBy": "startTime"}' 2>/dev/null
+```
 
-Prefer `gws` over Composio for Google Workspace operations that Composio doesn't cover or when more control is needed (e.g. Sheets, Docs, Admin).
+**Gmail:**
+```bash
+gws gmail +triage 2>/dev/null                       # inbox summary
+gws gmail +send --params '{"userId": "me"}' --json '{"to": "user@example.com", "subject": "Hello", "body": "Message"}' 2>/dev/null
+```
+
+**Drive / Sheets / Docs:**
+```bash
+gws drive files list --params '{"pageSize": 10}' 2>/dev/null
+gws sheets +read --params '{"spreadsheetId": "ID", "range": "Sheet1!A1:C10"}' 2>/dev/null
+gws schema drive.files.list                          # inspect any method's schema
+```
+
+**Flags:** `--dry-run` (preview), `--page-all` (auto-paginate), `--page-limit N`, `--format table|yaml|csv`, JSON output by default.
+
+**Available services:** people (contacts), calendar, gmail, drive, sheets, docs, slides, tasks, chat, classroom, forms, keep, meet, admin-reports. Helper commands (prefixed with `+`) are available for common operations — run `gws <service> --help` to see them.
 
 ## OwnTracks Location Tracking
 
