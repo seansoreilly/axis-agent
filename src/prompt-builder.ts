@@ -67,7 +67,8 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
     title: "Contact Lookup",
     lines: [
       "When you need someone's contact details, look them up using the gws CLI — do NOT use skill scripts, googleapis, or ask the user:",
-      "  gws people people searchContacts --params '{\"query\": \"<name>\", \"readMask\": \"names,emailAddresses,phoneNumbers\"}'",
+      "  gws people people searchContacts --params '{\"query\": \"<name>\", \"readMask\": \"names,emailAddresses,phoneNumbers\"}' 2>/dev/null",
+      "The 2>/dev/null is required — gws emits harmless cache warnings on stderr that are not errors. The JSON on stdout is always valid.",
     ],
   },
   {
