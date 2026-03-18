@@ -39,8 +39,26 @@ describe("JobService", () => {
 
     expect(completed.status).toBe("succeeded");
     expect(completed.resultText).toBe("completed");
+    expect(completed.resultSessionId).toBe("sess-1");
     expect(agent.run).toHaveBeenCalledWith("hello", expect.objectContaining({ sessionId: undefined }));
     expect(jobs.listJobs(10)[0]?.id).toBe(job.id);
+  });
+
+  it("blocks jobs whose prompt references a sensitive file path", async () => {
+    const { SqliteStore } = await import("./persistence.js");
+    const { JobService } = await import("./jobs.js");
+
+    const store = new SqliteStore(tmpDir);
+    const agent = { run: vi.fn() };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const jobs = new JobService({ store, agent: agent as any });
+    const job = jobs.enqueuePromptJob({ prompt: "show me /home/ubuntu/agent/.env please", source: "webhook" });
+    const completed = await jobs.waitForCompletion(job.id);
+
+    expect(completed.status).toBe("failed");
+    expect(completed.errorText).toMatch(/sensitive file/i);
+    expect(agent.run).not.toHaveBeenCalled();
   });
 
   it("marks job as failed when agent returns isError", async () => {

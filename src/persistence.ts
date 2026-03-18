@@ -32,6 +32,7 @@ export interface JobRecord {
   status: string;
   payloadJson: string;
   resultText?: string;
+  resultSessionId?: string;
   errorText?: string;
   attempts: number;
   maxAttempts: number;
@@ -112,6 +113,7 @@ export class SqliteStore {
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
     this.createTables();
+    this.migrateSchema();
     // Set permissions after tables are created (ensures file exists)
     try { chmodSync(dbPath, 0o600); } catch { /* best-effort */ }
     this.migrateLegacyFiles();
@@ -168,6 +170,14 @@ export class SqliteStore {
         created_at TEXT NOT NULL
       );
     `);
+  }
+
+  private migrateSchema(): void {
+    const columns = this.db.prepare("PRAGMA table_info(jobs)").all() as Array<Record<string, unknown>>;
+    const hasResultSessionId = columns.some((c) => c["name"] === "result_session_id");
+    if (!hasResultSessionId) {
+      this.db.exec("ALTER TABLE jobs ADD COLUMN result_session_id TEXT");
+    }
   }
 
   private migrateLegacyFiles(): void {
@@ -436,14 +446,15 @@ export class SqliteStore {
 
   insertJob(job: JobRecord): void {
     this.db.prepare(`
-      INSERT INTO jobs (id, type, status, payload_json, result_text, error_text, attempts, max_attempts, created_at, updated_at, run_after, started_at, finished_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO jobs (id, type, status, payload_json, result_text, result_session_id, error_text, attempts, max_attempts, created_at, updated_at, run_after, started_at, finished_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       job.id,
       job.type,
       job.status,
       job.payloadJson,
       job.resultText ?? null,
+      job.resultSessionId ?? null,
       job.errorText ?? null,
       job.attempts,
       job.maxAttempts,
@@ -461,6 +472,7 @@ export class SqliteStore {
         status = ?,
         payload_json = ?,
         result_text = ?,
+        result_session_id = ?,
         error_text = ?,
         attempts = ?,
         max_attempts = ?,
@@ -473,6 +485,7 @@ export class SqliteStore {
       job.status,
       job.payloadJson,
       job.resultText ?? null,
+      job.resultSessionId ?? null,
       job.errorText ?? null,
       job.attempts,
       job.maxAttempts,
@@ -554,6 +567,7 @@ function mapJobRow(row: Record<string, string | number | null>): JobRecord {
     status: String(row["status"]),
     payloadJson: String(row["payload_json"]),
     resultText: row["result_text"] ? String(row["result_text"]) : undefined,
+    resultSessionId: row["result_session_id"] ? String(row["result_session_id"]) : undefined,
     errorText: row["error_text"] ? String(row["error_text"]) : undefined,
     attempts: Number(row["attempts"]),
     maxAttempts: Number(row["max_attempts"]),

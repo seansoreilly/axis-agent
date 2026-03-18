@@ -3,6 +3,7 @@ import type { Agent } from "./agent.js";
 import { metrics } from "./metrics.js";
 import { type JobRecord, SqliteStore } from "./persistence.js";
 import { error as logError, info } from "./logger.js";
+import { checkPromptForSensitiveFiles, logBlockedCommand } from "./policies.js";
 
 export interface PromptJobPayload {
   prompt: string;
@@ -128,6 +129,21 @@ export class JobService {
 
   private async processJob(job: JobRecord): Promise<void> {
     const payload = JSON.parse(job.payloadJson) as PromptJobPayload;
+
+    const sensitiveHit = checkPromptForSensitiveFiles(payload.prompt);
+    if (sensitiveHit) {
+      logBlockedCommand("job", payload.prompt.slice(0, 100), `sensitive file: ${sensitiveHit}`);
+      job.status = "failed";
+      job.errorText = `Blocked: prompt references a sensitive file (${sensitiveHit})`;
+      job.finishedAt = nowIso();
+      job.updatedAt = nowIso();
+      this.opts.store.updateJob(job);
+      this.opts.store.addEvent("job_blocked", { jobId: job.id, reason: sensitiveHit });
+      metrics.increment("jobs.blocked");
+      this.notifyWaiters(job);
+      return;
+    }
+
     job.status = "running";
     job.attempts += 1;
     job.startedAt = nowIso();
@@ -143,6 +159,7 @@ export class JobService {
         signal: controller.signal,
       });
       job.resultText = result.text;
+      job.resultSessionId = result.sessionId || undefined;
       job.status = result.isError ? "failed" : "succeeded";
       if (result.isError) {
         job.errorText = result.text;

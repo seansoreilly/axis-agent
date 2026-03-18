@@ -33,7 +33,7 @@ const SENSITIVE_FILE_PATTERNS: Array<{ pattern: RegExp; description: string }> =
   { pattern: /app_password.*\.json$/i,                description: "app password files" },
   { pattern: /\.pem$/,                                description: "PEM key files" },
   { pattern: /id_rsa$|id_ed25519$/,                   description: "SSH private keys" },
-  { pattern: /token.*\.json$/i,                       description: "token files" },
+  { pattern: /(?:^|[/\\])([\w-]*[-_])?token([-_][\w-]*)?\.json$/i, description: "token storage files (*-token.json, token.json)" },
 ];
 
 /**
@@ -58,6 +58,21 @@ export function checkSensitiveFile(filePath: string): string | null {
     if (pattern.test(filePath)) {
       return description;
     }
+  }
+  return null;
+}
+
+/**
+ * Scan a prompt string for tokens that look like sensitive file paths.
+ * Splits on whitespace and common delimiters, then tests each token against
+ * SENSITIVE_FILE_PATTERNS. Returns the matched description, or null if clean.
+ */
+export function checkPromptForSensitiveFiles(prompt: string): string | null {
+  const tokens = prompt.split(/[\s"'`()[\]{},;]+/);
+  for (const token of tokens) {
+    if (!token) continue;
+    const hit = checkSensitiveFile(token);
+    if (hit) return hit;
   }
   return null;
 }
