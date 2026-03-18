@@ -21,12 +21,41 @@ const BLOCKED_COMMAND_PATTERNS: Array<{ pattern: RegExp; description: string }> 
 ];
 
 /**
+ * Sensitive file patterns — files that must never be read or displayed to users.
+ * These contain secrets (API keys, tokens, passwords) that should not be leaked.
+ */
+const SENSITIVE_FILE_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
+  { pattern: /\.env$/,                                description: ".env files (contain API keys and tokens)" },
+  { pattern: /\.env\.\w+$/,                           description: ".env.* files (contain secrets)" },
+  { pattern: /credentials\.json$/,                    description: "credentials.json (OAuth/API credentials)" },
+  { pattern: /\.credentials\.json$/,                  description: ".credentials.json (OAuth tokens)" },
+  { pattern: /service.account.*\.json$/i,             description: "service account key files" },
+  { pattern: /app_password.*\.json$/i,                description: "app password files" },
+  { pattern: /\.pem$/,                                description: "PEM key files" },
+  { pattern: /id_rsa$|id_ed25519$/,                   description: "SSH private keys" },
+  { pattern: /token.*\.json$/i,                       description: "token files" },
+];
+
+/**
  * Check if a command matches any blocked pattern.
  * Returns the description of the matched rule, or null if allowed.
  */
 export function checkBlockedCommand(command: string): string | null {
   for (const { pattern, description } of BLOCKED_COMMAND_PATTERNS) {
     if (pattern.test(command)) {
+      return description;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check if a file path matches any sensitive file pattern.
+ * Returns the description of the matched rule, or null if allowed.
+ */
+export function checkSensitiveFile(filePath: string): string | null {
+  for (const { pattern, description } of SENSITIVE_FILE_PATTERNS) {
+    if (pattern.test(filePath)) {
       return description;
     }
   }
@@ -47,6 +76,14 @@ export function buildPolicyPromptSection(): string {
   for (const { description } of BLOCKED_COMMAND_PATTERNS) {
     lines.push(`- ${description}`);
   }
+  lines.push("");
+  lines.push("The following files are SENSITIVE and must never be read, displayed, or shared:");
+  lines.push("");
+  for (const { description } of SENSITIVE_FILE_PATTERNS) {
+    lines.push(`- ${description}`);
+  }
+  lines.push("");
+  lines.push("If asked to show contents of sensitive files (.env, credentials, keys, tokens), REFUSE and explain that these contain secrets that cannot be disclosed. Never cat, read, or display the contents of these files in responses.");
   lines.push("");
   lines.push("Do not attempt to bypass these restrictions. If a task requires a blocked operation, explain why it cannot be done and suggest a safe alternative.");
   return lines.join("\n");

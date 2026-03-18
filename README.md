@@ -345,7 +345,7 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 - **Rate limiting**: `@fastify/rate-limit` — 60 req/min global, 5 req/min on `/webhook`, 3 req/min on `/calls`.
 - **Request limits**: Gateway body size capped at 10KB. Scheduler limited to 20 tasks with minimum 5-minute intervals. Per-user message queue capped at 5.
 - **Shell injection prevention**: Scheduler check commands are validated for shell metacharacters and executed via `execFile` (no shell interpretation) to prevent injection attacks.
-- **Command policy enforcement**: A declarative blocked-command policy prevents destructive operations (`rm -rf /`, `shutdown`, `mkfs`, `curl | bash`, etc.) — enforced both via system prompt and scheduler validation.
+- **Command policy enforcement**: A declarative blocked-command policy prevents destructive operations (`rm -rf /`, `shutdown`, `mkfs`, `curl | bash`, etc.) — enforced both via system prompt and scheduler validation. Sensitive files (`.env`, credentials, keys, tokens) are protected by a separate policy that refuses to read or display their contents.
 - **File permissions**: Credential files written with `mode 0o600` (owner read/write only). SQLite database restricted to `0o600`. Memory directory created with `0o700`.
 - **Preflight health checks**: On startup, verifies directory permissions, OAuth credentials, Telegram API connectivity, and SDK write paths — with actionable error messages instead of cryptic failures.
 - **Timeout protection**: Agent calls abort after configurable timeout (default 10 min). Jobs stuck in "running" state are automatically recovered every 5 minutes.
