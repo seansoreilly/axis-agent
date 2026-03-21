@@ -11,10 +11,11 @@ export class TelegramProgressReporter {
     private readonly formatElapsed: (startMs: number) => string
   ) {}
 
-  start(chatId: number, startTime: number): { stop: () => Promise<void> } {
+  start(chatId: number, startTime: number): { stop: () => Promise<void>; setActivity: (activity: string) => void } {
     let ackMessageId: number | undefined;
     let stopped = false;
     let updateInterval: ReturnType<typeof setInterval> | undefined;
+    let currentActivity = "";
 
     const ackTimeout = setTimeout(async () => {
       if (stopped) return;
@@ -27,9 +28,10 @@ export class TelegramProgressReporter {
           try {
             const elapsedMs = Date.now() - startTime;
             const elapsedText = this.formatElapsed(startTime);
+            const activitySuffix = currentActivity ? ` — ${currentActivity}` : "";
             const text = elapsedMs >= LONG_RUNNING_WARNING_MS
-              ? `Still working... (${elapsedText} elapsed) — taking longer than usual. /cancel to abort.`
-              : `Still working... (${elapsedText} elapsed)`;
+              ? `Still working... (${elapsedText} elapsed)${activitySuffix} — taking longer than usual. /cancel to abort.`
+              : `Still working... (${elapsedText} elapsed)${activitySuffix}`;
             await this.bot.editMessageText(
               text,
               { chat_id: chatId, message_id: ackMessageId }
@@ -44,6 +46,9 @@ export class TelegramProgressReporter {
     }, ACK_DELAY_MS);
 
     return {
+      setActivity: (activity: string) => {
+        currentActivity = activity;
+      },
       stop: async () => {
         stopped = true;
         clearTimeout(ackTimeout);

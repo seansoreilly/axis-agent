@@ -553,3 +553,166 @@ describe("ProcessManager", () => {
     expect(proc.state).toBe("dead");
   });
 });
+
+describe("PersistentProcess activity events", () => {
+  let mockProc: ReturnType<typeof mockChildProcess>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockProc = mockChildProcess();
+    const { spawn } = await import("node:child_process");
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProc);
+  });
+
+  it("fires onActivity callback when tool_use is detected in stream", async () => {
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    const activities: Array<{ tool?: string; text?: string }> = [];
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+      onActivity: (event) => activities.push(event),
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const resultPromise = proc.sendPrompt("test");
+    await flush();
+
+    // Emit an assistant message with a tool_use content block
+    mockProc.stdout.push(
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", name: "Bash" }],
+        },
+        session_id: "sess-1",
+      }) + "\n"
+    );
+    await flush();
+
+    expect(activities.length).toBeGreaterThanOrEqual(1);
+    expect(activities.some((a) => a.tool === "Bash")).toBe(true);
+
+    emitResult(mockProc);
+    await resultPromise;
+  });
+
+  it("fires onActivity with text for assistant text blocks", async () => {
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    const activities: Array<{ tool?: string; text?: string }> = [];
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+      onActivity: (event) => activities.push(event),
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const resultPromise = proc.sendPrompt("test");
+    await flush();
+
+    mockProc.stdout.push(
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Let me check that for you." }],
+        },
+        session_id: "sess-1",
+      }) + "\n"
+    );
+    await flush();
+
+    expect(activities.some((a) => a.text === "Let me check that for you.")).toBe(true);
+
+    emitResult(mockProc);
+    await resultPromise;
+  });
+
+  it("does not fire onActivity when no callback is set", async () => {
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    // No onActivity callback — should not throw
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const resultPromise = proc.sendPrompt("test");
+    await flush();
+
+    // Emit tool_use — should not throw even without callback
+    mockProc.stdout.push(
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", name: "Read" }],
+        },
+        session_id: "sess-1",
+      }) + "\n"
+    );
+    await flush();
+
+    emitResult(mockProc);
+    await resultPromise;
+  });
+});
+
+describe("Long-running orchestrator", () => {
+  let mockProc: ReturnType<typeof mockChildProcess>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockProc = mockChildProcess();
+    const { spawn } = await import("node:child_process");
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProc);
+  });
+
+  it("auto-interrupts after maxRunMs exceeded", async () => {
+    vi.useFakeTimers();
+
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const writeSpy = vi.spyOn(mockProc.stdin, "write");
+
+    // Send prompt with a 5-minute max run time
+    const resultPromise = proc.sendPrompt("complex task", { maxRunMs: 5 * 60 * 1000 });
+
+    // Advance past maxRunMs
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1000);
+
+    // Should have sent an interrupt
+    const interruptCall = writeSpy.mock.calls.find((c) =>
+      String(c[0]).includes("interrupt")
+    );
+    expect(interruptCall).toBeTruthy();
+
+    // Emit result after interrupt
+    emitResult(mockProc, { text: "interrupted", isError: true });
+    const result = await resultPromise;
+    expect(result.isError).toBe(true);
+
+    vi.useRealTimers();
+  });
+});

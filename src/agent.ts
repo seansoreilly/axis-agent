@@ -208,7 +208,14 @@ export class Agent {
 
   async run(
     prompt: string,
-    opts?: { sessionId?: string; model?: string; signal?: AbortSignal; userId?: number; timeoutMs?: number }
+    opts?: {
+      sessionId?: string;
+      model?: string;
+      signal?: AbortSignal;
+      userId?: number;
+      timeoutMs?: number;
+      onActivity?: (event: { tool?: string; text?: string }) => void;
+    }
   ): Promise<AgentResult> {
     const { claude } = this.config;
     const model = opts?.model ?? claude.model;
@@ -216,7 +223,7 @@ export class Agent {
 
     // Use persistent process for user-initiated requests
     if (opts?.userId) {
-      return this.runPersistent(prompt, opts.userId, model, timeoutMs, opts.signal);
+      return this.runPersistent(prompt, opts.userId, model, timeoutMs, opts.signal, opts.onActivity);
     }
 
     // Fall back to one-shot spawn for jobs/webhooks (no userId)
@@ -233,10 +240,11 @@ export class Agent {
     model: string,
     timeoutMs: number,
     signal?: AbortSignal,
+    onActivity?: (event: { tool?: string; text?: string }) => void,
   ): Promise<AgentResult> {
     try {
-      const proc = await this.processManager.getOrCreate(userId, model);
-      const result = await proc.sendPrompt(prompt, { timeoutMs, signal });
+      const proc = await this.processManager.getOrCreate(userId, model, onActivity);
+      const result = await proc.sendPrompt(prompt, { timeoutMs, signal, maxRunMs: 5 * 60 * 1000 });
       return {
         text: result.text,
         sessionId: result.sessionId,

@@ -12,11 +12,13 @@ export interface PersistentProcessOpts {
   sessionId?: string;
   allowedTools?: string[];
   agents?: Record<string, unknown>;
+  onActivity?: (event: ActivityEvent) => void;
 }
 
 export interface SendPromptOpts {
   timeoutMs?: number;
   signal?: AbortSignal;
+  maxRunMs?: number;
 }
 
 export interface PromptResult {
@@ -29,6 +31,12 @@ export interface PromptResult {
 }
 
 /** Stream-json message types from Claude Code CLI */
+/** Activity event emitted during prompt processing */
+export interface ActivityEvent {
+  tool?: string;
+  text?: string;
+}
+
 interface StreamMessage {
   type: string;
   subtype?: string;
@@ -39,7 +47,7 @@ interface StreamMessage {
   is_error?: boolean;
   message?: {
     role?: string;
-    content: Array<{ type: string; text?: string } | string>;
+    content: Array<{ type: string; text?: string; name?: string } | string>;
   };
   errors?: string[];
 }
@@ -58,10 +66,12 @@ export class PersistentProcess {
   private currentResultText = "";
   private readyResolve?: () => void;
   private readyReject?: (err: Error) => void;
+  private onActivity?: (event: ActivityEvent) => void;
   readonly ready: Promise<void>;
 
   constructor(opts: PersistentProcessOpts) {
     this._model = opts.model;
+    this.onActivity = opts.onActivity;
 
     const args: string[] = [
       "-p",
@@ -167,6 +177,14 @@ export class PersistentProcess {
         }, opts.timeoutMs);
       }
 
+      // Set up maxRunMs auto-interrupt (orchestrator watchdog)
+      let maxRunId: ReturnType<typeof setTimeout> | undefined;
+      if (opts?.maxRunMs) {
+        maxRunId = setTimeout(() => {
+          this.interrupt();
+        }, opts.maxRunMs);
+      }
+
       // Set up abort signal
       const onAbort = (): void => {
         this.interrupt();
@@ -188,10 +206,11 @@ export class PersistentProcess {
         opts.signal.addEventListener("abort", onAbort, { once: true });
       }
 
-      // Wrap resolve to clean up timeout/signal
+      // Wrap resolve to clean up timeout/signal/maxRun
       const originalResolve = this.currentResolve;
       this.currentResolve = (result: PromptResult) => {
         if (timeoutId) clearTimeout(timeoutId);
+        if (maxRunId) clearTimeout(maxRunId);
         opts?.signal?.removeEventListener("abort", onAbort);
         originalResolve?.(result);
       };
@@ -263,11 +282,16 @@ export class PersistentProcess {
       return;
     }
 
-    // Assistant text — capture latest text block
+    // Assistant content — capture text and emit activity events
     if (msg.type === "assistant" && msg.message?.content) {
       for (const block of msg.message.content) {
-        if (typeof block === "object" && "type" in block && block.type === "text" && block.text) {
-          this.currentResultText = block.text;
+        if (typeof block === "object" && "type" in block) {
+          if (block.type === "text" && block.text) {
+            this.currentResultText = block.text;
+            this.onActivity?.({ text: block.text });
+          } else if (block.type === "tool_use" && block.name) {
+            this.onActivity?.({ tool: block.name });
+          }
         }
       }
     }
@@ -355,7 +379,11 @@ export class ProcessManager {
    * Get an existing ready process for this user, or create a new one.
    * If the model has changed, kills the old process and creates a new one.
    */
-  async getOrCreate(userId: number, model?: string): Promise<PersistentProcess> {
+  async getOrCreate(
+    userId: number,
+    model?: string,
+    onActivity?: (event: ActivityEvent) => void,
+  ): Promise<PersistentProcess> {
     const requestedModel = model ?? this.opts.model;
     const existing = this.processes.get(userId);
 
@@ -381,6 +409,7 @@ export class ProcessManager {
       systemPrompt: this.opts.systemPrompt,
       allowedTools: this.opts.allowedTools,
       agents: this.opts.agents,
+      onActivity,
     });
 
     this.processes.set(userId, proc);

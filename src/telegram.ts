@@ -322,18 +322,30 @@ export class TelegramIntegration {
       const sessionId = this.userSessions.get(userId) ?? this.store.getRecentSession(userId)?.sessionId;
 
       const model = state.modelOverride;
+      const toolNames: Record<string, string> = {
+        Bash: "running command", Read: "reading file", Write: "writing file",
+        Edit: "editing file", Glob: "searching files", Grep: "searching code",
+        WebSearch: "searching web", WebFetch: "fetching page", Task: "delegating task",
+      };
+      const onActivity = (event: { tool?: string; text?: string }): void => {
+        if (event.tool) {
+          const friendly = event.tool.startsWith("mcp__") ? `using ${event.tool.split("__")[1]}` : toolNames[event.tool] ?? `using ${event.tool}`;
+          progress.setActivity(friendly);
+        }
+      };
       let result = await this.agent.run(text, {
         sessionId,
         model,
         signal: abortController.signal,
         userId,
+        onActivity,
       });
 
       // If the run failed with a session, retry without it (stale session recovery)
       if (result.isError && sessionId && !abortController.signal.aborted) {
         info("telegram", `Retrying without session for user ${userId} (stale session)`);
         this.userSessions.delete(userId);
-        result = await this.agent.run(text, { model, signal: abortController.signal, userId });
+        result = await this.agent.run(text, { model, signal: abortController.signal, userId, onActivity });
       }
 
       if (result.sessionId) {
