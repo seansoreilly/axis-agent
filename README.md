@@ -123,6 +123,8 @@ Up-to-date library documentation lookup via [@upstash/context7-mcp](https://gith
 - The agent proactively saves personal info, preferences, work context, key decisions, and corrections
 - Session cost tracking via SQLite (no custom facts table — Claude Code handles memory natively)
 - Session resume via `--resume <sessionId>` preserves full conversation history
+- **Granular identity files** — optional `USER.md` (user context) and `TOOLS.md` (capability routing) loaded alongside `SOUL.md` and injected into the system prompt
+- **JSONL transcript logging** — every conversation turn is logged as `<sessionId>.jsonl` files for audit trails, debugging, and full-text search across sessions
 
 ### Orchestration
 - Spawns parallel subagents for complex multi-part tasks
@@ -354,7 +356,7 @@ src/
   agent.ts              # Claude Code CLI orchestrator (persistent + one-shot modes)
   persistent-process.ts # Long-lived CLI process via --input-format stream-json (multi-turn)
   auth.ts               # OAuth token refresh (proactive + periodic)
-  dynamic-context.ts    # Builds --append-system-prompt payload (tasks, policies, datetime)
+  dynamic-context.ts    # Builds --append-system-prompt payload (identity, tasks, policies, datetime)
   gateway.ts            # Fastify HTTP server (webhook + task management + admin endpoints)
   telegram.ts           # Telegram Bot API connector (commands, media, inline keyboards)
   telegram-commands.ts  # Telegram command definitions and registry
@@ -369,6 +371,8 @@ src/
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
   voice.ts              # Voice calling service (Retell.ai SDK, call monitoring)
+  identity.ts           # Granular identity files (SOUL.md, USER.md, TOOLS.md) loader and composer
+  transcript.ts         # JSONL session transcript logger (append, search, export)
 workspace-CLAUDE.md     # Static agent instructions deployed to workDir (auto-loaded by Claude Code)
 scripts/
   sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server

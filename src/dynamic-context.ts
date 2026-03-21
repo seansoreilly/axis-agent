@@ -1,11 +1,23 @@
 import type { SqliteStore } from "./persistence.js";
+import type { IdentityManager } from "./identity.js";
 import { buildPolicyPromptSection } from "./policies.js";
 
 export class DynamicContextBuilder {
-  constructor(private readonly store: SqliteStore) {}
+  constructor(
+    private readonly store: SqliteStore,
+    private readonly identity?: IdentityManager,
+  ) {}
 
-  buildDynamicContext(): string {
+  async buildDynamicContext(): Promise<string> {
     const parts: string[] = [];
+
+    // Identity context (USER.md, TOOLS.md — SOUL.md is auto-discovered by CLI)
+    if (this.identity) {
+      const ctx = await this.identity.load();
+      if (ctx.composed) {
+        parts.push(ctx.composed);
+      }
+    }
 
     // Current datetime
     const now = new Date().toLocaleString("en-AU", {

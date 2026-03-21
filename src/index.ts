@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { loadConfig } from "./config.js";
 import { Agent } from "./agent.js";
 import { Scheduler } from "./scheduler.js";
@@ -9,6 +10,8 @@ import { SqliteStore } from "./persistence.js";
 import { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
 import { preflight } from "./preflight.js";
+import { IdentityManager } from "./identity.js";
+import { TranscriptLogger } from "./transcript.js";
 import type { VoiceService as VoiceServiceType } from "./voice.js";
 
 async function main(): Promise<void> {
@@ -33,7 +36,9 @@ async function main(): Promise<void> {
   }
 
   const store = new SqliteStore(config.memoryDir);
-  const agent = new Agent(config, store);
+  const identity = new IdentityManager(config.claude.workDir);
+  const transcriptLogger = new TranscriptLogger(join(config.memoryDir, "transcripts"));
+  const agent = new Agent(config, store, identity);
   const jobs = new JobService({ store, agent });
 
   // Set up scheduler with Telegram notifications (created before telegram so we can pass it)
@@ -100,7 +105,8 @@ async function main(): Promise<void> {
     store,
     config.claude.workDir,
     scheduler,
-    voiceService
+    voiceService,
+    transcriptLogger,
   );
 
   // Start Telegram bot

@@ -176,7 +176,7 @@ function spawnClaude(args: string[], opts: {
 
 export class Agent {
   private readonly contextBuilder: DynamicContextBuilder;
-  private readonly processManager: ProcessManager;
+  private processManager!: ProcessManager;
   private readonly agents = {
     research: {
       description: "Thorough research and analysis agent for tasks requiring investigation, comparison, multi-source research, synthesizing documents, technical analysis, and moderate coding tasks. Use when the main agent lacks the depth needed.",
@@ -194,17 +194,27 @@ export class Agent {
   constructor(
     private readonly config: Config,
     store: SqliteStore,
+    identity?: import("./identity.js").IdentityManager,
   ) {
-    this.contextBuilder = new DynamicContextBuilder(store);
-    this.processManager = new ProcessManager({
-      model: config.claude.model,
-      workDir: config.claude.workDir,
-      maxBudgetUsd: config.claude.maxBudgetUsd,
-      systemPrompt: this.contextBuilder.buildDynamicContext(),
-      allowedTools: this.allowedTools,
-      agents: this.agents,
-      selfReview: true,
+    this.contextBuilder = new DynamicContextBuilder(store, identity);
+    // ProcessManager created lazily after async identity context is loaded
+    this.initPromise = this.contextBuilder.buildDynamicContext().then((ctx) => {
+      this.processManager = new ProcessManager({
+        model: config.claude.model,
+        workDir: config.claude.workDir,
+        maxBudgetUsd: config.claude.maxBudgetUsd,
+        systemPrompt: ctx,
+        allowedTools: this.allowedTools,
+        agents: this.agents,
+        selfReview: true,
+      });
     });
+  }
+
+  private readonly initPromise: Promise<void>;
+
+  private async ensureReady(): Promise<void> {
+    await this.initPromise;
   }
 
   async run(
@@ -221,6 +231,8 @@ export class Agent {
     const { claude } = this.config;
     const model = opts?.model ?? claude.model;
     const timeoutMs = opts?.timeoutMs ?? claude.agentTimeoutMs;
+
+    await this.ensureReady();
 
     // Use persistent process for user-initiated requests
     if (opts?.userId) {
@@ -279,7 +291,7 @@ export class Agent {
     signal?: AbortSignal,
   ): Promise<AgentResult> {
     const { claude } = this.config;
-    const dynamicContext = this.contextBuilder.buildDynamicContext();
+    const dynamicContext = await this.contextBuilder.buildDynamicContext();
 
     const args: string[] = [
       "-p",

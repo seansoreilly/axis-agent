@@ -5,6 +5,7 @@ import type { Agent, AgentResult } from "./agent.js";
 import type { SqliteStore } from "./persistence.js";
 import type { Scheduler } from "./scheduler.js";
 import type { VoiceService } from "./voice.js";
+import type { TranscriptLogger } from "./transcript.js";
 import { info, error as logError } from "./logger.js";
 import { TelegramMediaService } from "./telegram-media.js";
 import { TelegramProgressReporter } from "./telegram-progress.js";
@@ -66,6 +67,7 @@ export class TelegramIntegration {
   private workDir: string;
   private scheduler?: Scheduler;
   private voiceService?: VoiceService;
+  private transcriptLogger?: TranscriptLogger;
   private allowedUsers: Set<number>;
   private userSessions: Map<number, string> = new Map();
   private processingUsers: Set<number> = new Set();
@@ -81,7 +83,8 @@ export class TelegramIntegration {
     store: SqliteStore,
     workDir: string,
     scheduler?: Scheduler,
-    voiceService?: VoiceService
+    voiceService?: VoiceService,
+    transcriptLogger?: TranscriptLogger,
   ) {
     this.bot = new TelegramBot(botToken, { polling: true });
     this.botToken = botToken;
@@ -90,6 +93,7 @@ export class TelegramIntegration {
     this.workDir = workDir;
     this.scheduler = scheduler;
     this.voiceService = voiceService;
+    this.transcriptLogger = transcriptLogger;
     this.allowedUsers = new Set(allowedUsers);
     this.media = new TelegramMediaService(this.bot, botToken);
     this.progressReporter = new TelegramProgressReporter(
@@ -357,6 +361,24 @@ export class TelegramIntegration {
         this.store.recordSession(result.sessionId, userId, text, {
           totalCostUsd: result.totalCostUsd,
         });
+
+        // Log transcript entries (fire-and-forget)
+        if (this.transcriptLogger) {
+          const now = new Date().toISOString();
+          const sid = result.sessionId;
+          this.transcriptLogger.append({
+            timestamp: now, sessionId: sid, userId, role: "user", content: text,
+          }).catch(() => {});
+          this.transcriptLogger.append({
+            timestamp: now, sessionId: sid, userId, role: "assistant", content: result.text,
+            metadata: {
+              model: model ?? undefined,
+              durationMs: result.durationMs,
+              costUsd: result.totalCostUsd,
+              isError: result.isError,
+            },
+          }).catch(() => {});
+        }
       }
       this.recordResponseTime(Date.now() - startTime);
 

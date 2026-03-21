@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -33,7 +33,7 @@ describe("DynamicContextBuilder", () => {
       });
 
       const builder = new DynamicContextBuilder(store);
-      const context = builder.buildDynamicContext();
+      const context = await builder.buildDynamicContext();
 
       expect(context).toContain("Scheduled Tasks");
       expect(context).toContain("email-triage");
@@ -56,10 +56,38 @@ describe("DynamicContextBuilder", () => {
     try {
       const store = new SqliteStore(tmpDir);
       const builder = new DynamicContextBuilder(store);
-      const context = builder.buildDynamicContext();
+      const context = await builder.buildDynamicContext();
 
       expect(context).toContain("Current Date & Time");
       expect(context).toContain("Australia/Melbourne");
+    } finally {
+      if (existsSync(tmpDir)) {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("includes identity context when IdentityManager is provided", async () => {
+    const { DynamicContextBuilder } = await import("./dynamic-context.js");
+    const { SqliteStore } = await import("./persistence.js");
+    const { IdentityManager } = await import("./identity.js");
+
+    const tmpDir = join(tmpdir(), `dc-identity-test-${Date.now()}`);
+    const workDir = join(tmpDir, "work");
+    mkdirSync(workDir, { recursive: true });
+
+    writeFileSync(join(workDir, "USER.md"), "Preferred name: Alex\nRole: Engineer");
+    writeFileSync(join(workDir, "TOOLS.md"), "Available: Trello, Gmail");
+
+    try {
+      const store = new SqliteStore(tmpDir);
+      const identity = new IdentityManager(workDir);
+      const builder = new DynamicContextBuilder(store, identity);
+      const context = await builder.buildDynamicContext();
+
+      expect(context).toContain("Preferred name: Alex");
+      expect(context).toContain("Available: Trello, Gmail");
+      expect(context).toContain("Current Date & Time");
     } finally {
       if (existsSync(tmpDir)) {
         rmSync(tmpDir, { recursive: true, force: true });
