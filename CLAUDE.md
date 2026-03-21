@@ -253,6 +253,25 @@ The `--generate-notes` flag auto-generates release notes from commit messages si
 
 **Important:** Always bump the version as part of the commit workflow. Do not create commits without considering whether a version bump is needed.
 
+## Learnings
+
+Important discoveries, debugging insights, and non-obvious behaviors are recorded in `LEARNINGS.md` at the project root. This file serves as institutional memory — preventing the same mistakes from being repeated across conversations.
+
+**When to add an entry:** After resolving any issue where the root cause was non-obvious, a workaround was needed, or an API/tool behaved unexpectedly. Also record successful patterns worth reusing.
+
+**Auto-retain rule:** Before completing any debugging session, bug fix, or integration task, check whether a new learning should be recorded. If the fix involved something surprising or undocumented, append it to `LEARNINGS.md`. This is mandatory — don't skip it.
+
+**Entry format:**
+```markdown
+### [YYYY-MM-DD] - [component] - [outcome: fix|workaround|lesson|pattern]
+- **What happened**: Brief description
+- **Root cause**: What went wrong or was unexpected
+- **Fix/Pattern**: What was done
+- **Lesson**: What to do differently / remember next time
+```
+
+**What NOT to record:** Routine bugs with obvious causes, typos, simple config changes, or anything already documented elsewhere in CLAUDE.md.
+
 ## Security Model
 
 - Gateway binds to `0.0.0.0` (all interfaces) — Tailscale VPN + cloud firewall provide network access control
