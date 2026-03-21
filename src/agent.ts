@@ -353,6 +353,13 @@ export class Agent {
   }
 
   /**
+   * Return info about all active persistent processes.
+   */
+  getActiveProcesses(): Array<{ userId: number; state: string; model: string }> {
+    return this.processManager.getActiveProcesses();
+  }
+
+  /**
    * Kill all persistent processes (used at shutdown).
    */
   shutdown(): void {

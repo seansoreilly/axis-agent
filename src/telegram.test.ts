@@ -42,6 +42,7 @@ function makeAgent(runImpl?: (...args: unknown[]) => unknown) {
           isError: false,
         } satisfies AgentResult),
     resetSession: vi.fn(),
+    getActiveProcesses: vi.fn().mockReturnValue([]),
     shutdown: vi.fn(),
   };
 }

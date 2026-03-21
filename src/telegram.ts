@@ -683,6 +683,18 @@ export class TelegramIntegration {
         const model = state.modelOverride
           ? Object.entries(VALID_MODELS).find(([, v]) => v === state.modelOverride)?.[0] ?? "custom"
           : "default";
+        const procs = this.agent.getActiveProcesses();
+        let procLine = "";
+        if (procs.length > 0) {
+          const counts = new Map<string, number>();
+          for (const p of procs) {
+            counts.set(p.state, (counts.get(p.state) ?? 0) + 1);
+          }
+          const summary = [...counts.entries()].map(([s, n]) => `${n} ${s}`).join(", ");
+          procLine = `Persistent processes: ${procs.length} (${summary})`;
+        } else {
+          procLine = "Persistent processes: 0";
+        }
         await this.bot.sendMessage(
           chatId,
           [
@@ -690,6 +702,7 @@ export class TelegramIntegration {
             `Active sessions: ${this.userSessions.size}`,
             `Model: ${model}`,
             `Session cost: $${state.totalCostUsd.toFixed(4)}`,
+            procLine,
             this.scheduler
               ? `Scheduled tasks: ${this.scheduler.list().length}`
               : "",

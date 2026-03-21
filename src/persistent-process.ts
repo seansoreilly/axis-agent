@@ -443,6 +443,19 @@ export class ProcessManager {
     }
   }
 
+  /**
+   * Return info about all active (non-dead) processes.
+   */
+  getActiveProcesses(): Array<{ userId: number; state: string; model: string }> {
+    const result: Array<{ userId: number; state: string; model: string }> = [];
+    for (const [userId, proc] of this.processes) {
+      if (proc.state !== "dead") {
+        result.push({ userId, state: proc.state, model: proc.model });
+      }
+    }
+    return result;
+  }
+
   private startReaper(): void {
     this.reaperInterval = setInterval(() => {
       const now = Date.now();
