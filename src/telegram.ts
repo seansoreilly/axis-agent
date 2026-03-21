@@ -195,7 +195,8 @@ export class TelegramIntegration {
         state.recentPhotos = state.recentPhotos
           .filter(p => p.timestamp > thirtyMinAgo)
           .slice(-10);
-        text = `[Photo uploaded: ${tmpPath}]\nThe user sent a photo. Use the Read tool to view it at the path above.\n\n${text}`.trim();
+        const captionHint = text ? `\nUser caption: "${text}"` : "";
+        text = `[Photo uploaded: ${tmpPath}]\nThe user sent a photo. Use the Read tool to view it at the path above. If the image contains text, extract it verbatim. Note: Telegram compresses photos — if OCR quality is poor, ask the user to resend using "Send as File" for lossless quality.${captionHint}`.trim();
       }
       if (!text) text = "What's in this image?";
     }
