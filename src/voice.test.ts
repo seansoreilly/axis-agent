@@ -31,10 +31,7 @@ function createService(): VoiceService {
     agentId: "test-agent-id",
     voiceId: "test-voice-id",
   };
-  const mockMemory = {
-    getContext: vi.fn().mockReturnValue(null),
-  } as unknown as Parameters<typeof VoiceService.prototype.makeCall extends (...args: infer A) => unknown ? never : never>;
-  return new VoiceService(config, mockMemory as never);
+  return new VoiceService(config);
 }
 
 describe("VoiceService", () => {

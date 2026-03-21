@@ -73,6 +73,7 @@ describe("Contract: gateway response shapes", () => {
       store,
       gatewayApiToken: TOKEN,
       owntracksToken: opts?.withOwntracks ? "ot-secret" : undefined,
+      workDir: opts?.withOwntracks ? tmpDir : undefined,
     });
 
     return { app, store, agent, scheduler, jobs };

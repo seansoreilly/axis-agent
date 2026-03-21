@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   let voiceService: VoiceServiceType | undefined;
   if (config.retell) {
     const { VoiceService } = await import("./voice.js");
-    voiceService = new VoiceService(config.retell, store, (callId, status, result) => {
+    voiceService = new VoiceService(config.retell, (callId, status, result) => {
       if (primaryUser && telegram) {
         let msg: string;
         if (status === "completed") {
@@ -98,6 +98,7 @@ async function main(): Promise<void> {
     config.telegram.allowedUsers,
     agent,
     store,
+    config.claude.workDir,
     scheduler,
     voiceService
   );
@@ -112,6 +113,7 @@ async function main(): Promise<void> {
     scheduler,
     jobs,
     store,
+    workDir: config.claude.workDir,
     owntracksToken: config.owntracksToken,
     gatewayApiToken: config.gatewayApiToken,
     voiceService,

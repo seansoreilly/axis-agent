@@ -1,8 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import Retell from "retell-sdk";
 import type { RetellConfig } from "./config.js";
-import type { SqliteStore } from "./persistence.js";
 import { info, error as logError } from "./logger.js";
 
 export interface VoiceCallRequest {
@@ -43,37 +40,17 @@ interface ActiveCall {
 
 export class VoiceService {
   private readonly config: RetellConfig;
-  private readonly memory: SqliteStore;
   private readonly client: Retell;
   private readonly onCallStatus?: CallStatusCallback;
   private activeCalls: Map<string, ActiveCall> = new Map();
-  private soulMd: string | null = null;
 
   constructor(
     retellConfig: RetellConfig,
-    memory: SqliteStore,
     onCallStatus?: CallStatusCallback
   ) {
     this.config = retellConfig;
-    this.memory = memory;
     this.client = new Retell({ apiKey: retellConfig.apiKey });
     this.onCallStatus = onCallStatus;
-    this.soulMd = this.loadSoulMd();
-  }
-
-  private loadSoulMd(): string | null {
-    const candidates = [
-      resolve(process.cwd(), "SOUL.md"),
-      resolve(process.cwd(), "..", "SOUL.md"),
-    ];
-    for (const path of candidates) {
-      try {
-        return readFileSync(path, "utf-8");
-      } catch {
-        // not found, try next
-      }
-    }
-    return null;
   }
 
   isAvailable(): boolean {
@@ -169,17 +146,6 @@ export class VoiceService {
     const isIvr = this.isIvrCall(request);
     const parts: string[] = [];
 
-    // Only inject SOUL.md for human calls — IVR calls need a focused, short prompt
-    if (this.soulMd && !isIvr) {
-      parts.push(
-        "# Personality",
-        this.soulMd,
-        "",
-        "Adapt the above personality for a phone call.",
-        ""
-      );
-    }
-
     const ownerName = process.env["OWNER_NAME"] ?? "";
     parts.push(
       "You are a personal AI assistant on a phone call.",
@@ -190,13 +156,6 @@ export class VoiceService {
 
     if (request.context) {
       parts.push("# Call Purpose", request.context, "");
-    }
-
-    const coreContext = this.memory.getContext({
-      categories: ["personal", "preference"],
-    });
-    if (coreContext) {
-      parts.push("# Known Facts About the User", coreContext, "");
     }
 
     if (isIvr) {
@@ -222,7 +181,7 @@ export class VoiceService {
         "## Information to provide when asked",
         ownerName ? `- Name: ${ownerName}` : "",
         "- Give details from the Call Purpose section above when relevant",
-        "- For callback number, use the Known Facts if available, otherwise make up a plausible one",
+        "- For callback number, use a plausible number",
         "- Make up reasonable placeholder details if asked for something not in the context (e.g. account number)",
         "",
         "## Ending",

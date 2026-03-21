@@ -32,6 +32,9 @@ sudo cp "$AGENT_DIR/systemd/claude-token-refresh.timer" /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now claude-token-refresh.timer
 
+echo "==> Deploying workspace CLAUDE.md to workDir..."
+cp "$AGENT_DIR/workspace-CLAUDE.md" /home/ubuntu/workspace/CLAUDE.md
+
 echo "==> Restarting service..."
 sudo systemctl restart claude-agent
 

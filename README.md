@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  An always-on AI agent powered by the <a href="https://platform.claude.com/docs/en/agent-sdk/overview">Claude Agent SDK</a>.<br>
+  An always-on AI agent powered by the <strong>Claude Code CLI</strong>.<br>
   Receives messages via Telegram, dispatches them to Claude Code, and returns results.<br>
   General-purpose assistant + task automation.
 </p>
@@ -12,7 +12,7 @@
 
 ## Why This Over OpenClaw?
 
-[OpenClaw](https://github.com/openclaw/openclaw) is a popular open-source AI agent (140k+ stars) that connects to messaging platforms. Axis Agent takes a different approach by wrapping Claude Code directly via the Agent SDK:
+[OpenClaw](https://github.com/openclaw/openclaw) is a popular open-source AI agent (140k+ stars) that connects to messaging platforms. Axis Agent takes a different approach by wrapping Claude Code directly via the CLI:
 
 | | Axis Agent | OpenClaw |
 |---|---|---|
@@ -34,7 +34,7 @@ The key advantages:
 ## Architecture
 
 ```
-Telegram --> TelegramIntegration --> Agent (Claude Agent SDK) --> Claude
+Telegram --> TelegramIntegration --> Agent (Claude Code CLI) --> Claude
 HTTP API --> Fastify Gateway --------^
 Cron    --> Scheduler ---------------^
 ```
@@ -44,15 +44,14 @@ The agent runs as a single Node.js process under systemd with security hardening
 ## Features
 
 ### Telegram Bot
-- **Conversational**: persistent sessions per user, with session resume across restarts
-- **Session summaries**: auto-generated for sessions costing ≥$0.05, injected when resuming context
+- **Conversational**: persistent sessions per user, with session resume across restarts (`--resume`)
 - **Model switching**: `/model opus|sonnet|haiku` to change models per session
 - **Cancel/retry**: `/cancel` aborts a running request, `/retry` re-runs the last prompt
 - **Cost tracking**: `/cost` shows accumulated usage and per-request averages
 - **Media support**: photos (vision), voice messages (with duration), and document uploads
 - **Progress indicators**: typing status, ETA based on recent response times, periodic updates every 60s with long-running warning after 5 minutes
 - **Inline keyboards**: retry and new session buttons on every response
-- **Persistent memory**: `/remember key=value`, `/forget key`, `/memories` — structured facts with categories (personal, work, preference, system, general) and access tracking
+- **Persistent memory**: Claude Code native auto-memory — proactively saves important facts across sessions without manual commands
 - **Reply context**: reply to a specific message to include it as context
 - **Voice messages**: voice recordings passed to the agent with duration metadata
 - **Stale session recovery**: automatically retries without session ID if a resumed session fails
@@ -101,7 +100,7 @@ Outbound phone calls via Retell.ai SDK with real-time voice AI. Uses a base Rete
 - **HTTP API** — `POST /calls` with `{ "phoneNumber": "+61...", "context": "...", "recipientName": "..." }`
 - **Call transcripts** — Retell captures structured transcript with word-level timestamps, delivered to Telegram when the call ends
 - **Call monitoring** — tracks active calls via status polling, 10-minute safety timeout
-- **Voice personality** — uses SOUL.md personality + memory facts for contextual conversations, with owner context (`OWNER_NAME` env var)
+- **Voice personality** — uses SOUL.md personality for contextual conversations, with owner context (`OWNER_NAME` env var)
 - **Voicemail detection** — automatic voicemail message and call termination via `end_call` tool
 - **IVR-aware mode** — separate prompt for automated systems (listen-first, DTMF via voice) vs human calls (fast, casual)
 
@@ -120,12 +119,10 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 Up-to-date library documentation lookup via [@upstash/context7-mcp](https://github.com/upstash/context7). Resolves library names to Context7-compatible IDs and fetches current docs and examples on demand, avoiding reliance on potentially outdated training data.
 
 ### Memory System
-- Structured facts with categories: personal, work, preference, system, general
-- Automatic category inference from key names
-- SQLite-backed persistence with migration from legacy JSON stores on first load
-- Context injection sorted by recency, capped at 30 facts
-- Session records with cost tracking, turn counts, and summaries
-- Auto-generated session summaries (via Haiku) for sessions costing ≥$0.05, injected when resuming
+- Claude Code native auto-memory — facts are written to `~/.claude/projects/.../memory/` automatically
+- The agent proactively saves personal info, preferences, work context, key decisions, and corrections
+- Session cost tracking via SQLite (no custom facts table — Claude Code handles memory natively)
+- Session resume via `--resume <sessionId>` preserves full conversation history
 
 ### Orchestration
 - Spawns parallel subagents for complex multi-part tasks
@@ -208,7 +205,7 @@ CLAUDE_AGENT_TIMEOUT_MS=600000
 claude auth login
 ```
 
-This authenticates with your Max/Pro plan. The Agent SDK inherits this auth — no API key needed.
+This authenticates with your Max/Pro plan. The CLI inherits this auth — no API key needed.
 
 ### 4. Create required directories
 
@@ -294,9 +291,6 @@ DEPLOY_HOST="ubuntu@your-server-ip" ./deploy.sh --self-heal
 | `/cost` | Show accumulated usage costs |
 | `/schedule add\|remove\|enable\|disable` | Manage scheduled tasks |
 | `/tasks` | List all scheduled tasks |
-| `/remember key=value` | Store a persistent fact |
-| `/forget key` | Remove a fact |
-| `/memories` | List all facts |
 | `/status` | Show uptime, sessions, model, cost, tasks |
 | `/call <name or +number> [context]` | Make an outbound voice call via Retell |
 | `/post [notes]` | Create a Facebook post using recently uploaded photos |
@@ -347,7 +341,7 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 - **Shell injection prevention**: Scheduler check commands are validated for shell metacharacters and executed via `execFile` (no shell interpretation) to prevent injection attacks.
 - **Command policy enforcement**: A declarative blocked-command policy prevents destructive operations (`rm -rf /`, `shutdown`, `mkfs`, `curl | bash`, etc.) — enforced both via system prompt and scheduler validation. Sensitive files (`.env`, credentials, keys, tokens) are protected by a separate policy that refuses to read or display their contents.
 - **File permissions**: Credential files written with `mode 0o600` (owner read/write only). SQLite database restricted to `0o600`. Memory directory created with `0o700`.
-- **Preflight health checks**: On startup, verifies directory permissions, OAuth credentials, Telegram API connectivity, and SDK write paths — with actionable error messages instead of cryptic failures.
+- **Preflight health checks**: On startup, verifies directory permissions, OAuth credentials, Telegram API connectivity, and CLI write paths — with actionable error messages instead of cryptic failures.
 - **Timeout protection**: Agent calls abort after configurable timeout (default 10 min). Jobs stuck in "running" state are automatically recovered every 5 minutes.
 - **Error sanitization**: Classified error messages (timeout, rate limit, connection) shown to users; internal details logged server-side only.
 
@@ -357,23 +351,24 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 src/
   index.ts              # Entry point - starts all services
   config.ts             # Environment config loader
-  agent.ts              # Wraps Claude Agent SDK query() calls
+  agent.ts              # Spawns Claude Code CLI, parses stream-json output
   auth.ts               # OAuth token refresh (proactive + periodic)
+  dynamic-context.ts    # Builds --append-system-prompt payload (tasks, policies, datetime)
   gateway.ts            # Fastify HTTP server (webhook + task management + admin endpoints)
   telegram.ts           # Telegram Bot API connector (commands, media, inline keyboards)
   telegram-commands.ts  # Telegram command definitions and registry
   telegram-media.ts     # Media handling (photos, voice, documents)
   telegram-progress.ts  # Typing indicators and ETA progress reporting
-  persistence.ts        # SQLite-backed storage for jobs, facts, sessions, memory, and tasks
+  persistence.ts        # SQLite-backed storage for jobs, sessions, tasks, and events
   scheduler.ts          # Cron-based task scheduling
   jobs.ts               # Durable job queue (webhook and scheduler-triggered runs)
   metrics.ts            # In-process counters and gauges for operational metrics
-  prompt-builder.ts     # Tiered system prompt construction (core + extended sections)
   policies.ts           # Declarative blocked-command policy (soft + hard enforcement)
-  preflight.ts          # Startup health checks (dirs, auth, Telegram API, SDK paths)
+  preflight.ts          # Startup health checks (dirs, auth, Telegram API, CLI paths)
   logger.ts             # Structured JSON logging
   trello-mcp-server.ts  # Native Trello MCP server (stdio transport)
   voice.ts              # Voice calling service (Retell.ai SDK, call monitoring)
+workspace-CLAUDE.md     # Static agent instructions deployed to workDir (auto-loaded by Claude Code)
 scripts/
   sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server
   migrate-secrets-to-bitwarden.sh  # One-time migration of server secrets to vault
@@ -384,8 +379,6 @@ scripts/
   integration-test.sh   # Integration tests — real operations against deployed instance
   post-deploy-check.sh  # Post-deploy regression tests (service, gateway, Telegram API)
   self-heal.sh          # Auto-restart service if inactive (systemd timer)
-  update-sdk.sh         # Daily cron to update Agent SDK and restart if changed
-  remember.js           # CLI for persistent fact CRUD
   refresh-token.sh      # Claude OAuth token refresh (runs via systemd timer)
   refresh-token.py      # Token refresh logic (called by refresh-token.sh)
   refresh-google-token.sh  # Google OAuth token keep-alive (cron, every 3 days)

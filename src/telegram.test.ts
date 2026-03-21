@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentResult } from "./agent.js";
-import type { Fact } from "./persistence.js";
 
 // Shared mock bot instance — captured when TelegramBot constructor is called
 let mockBotInstance: Record<string, ReturnType<typeof vi.fn>>;
@@ -37,28 +36,13 @@ function makeAgent(runImpl?: (...args: unknown[]) => unknown) {
           totalCostUsd: 0.01,
           isError: false,
         } satisfies AgentResult),
-    generateSummary: vi.fn().mockResolvedValue(null),
-    shouldSummarize: vi.fn().mockReturnValue(false),
   };
-}
-
-function makeFact(value: string, category = "general" as const): Fact {
-  const now = new Date().toISOString();
-  return { value, category, createdAt: now, updatedAt: now, lastAccessedAt: now };
 }
 
 function makeMemory() {
   return {
     recordSession: vi.fn(),
-    updateSessionSummary: vi.fn(),
-    setFact: vi.fn(),
-    deleteFact: vi.fn(),
-    getAllFacts: vi.fn().mockReturnValue({} as Record<string, Fact>),
-    getFact: vi.fn(),
     getLastSession: vi.fn().mockReturnValue(undefined),
-    getLastSessionSummary: vi.fn().mockReturnValue(undefined),
-    getContext: vi.fn().mockReturnValue(""),
-    getStats: vi.fn().mockReturnValue({ totalFacts: 0, byCategory: {} }),
   };
 }
 
@@ -87,7 +71,7 @@ async function createBot(agent?: ReturnType<typeof makeAgent>) {
   const m = makeMemory();
   const s = makeScheduler();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bot = new TelegramIntegration("token", [123], a as any, m as any, s as any);
+  const bot = new TelegramIntegration("token", [123], a as any, m as any, "/tmp/test-workdir", s as any);
   bot.start();
 
   const handler = mockBotInstance.on.mock.calls.find(
@@ -534,13 +518,8 @@ describe("TelegramIntegration", () => {
     expect(responseMsg).toBeTruthy();
   });
 
-  it("/status includes model and memory stats", async () => {
-    const { handler, botInstance, memory } = await createBot();
-
-    memory.getStats.mockReturnValue({
-      totalFacts: 5,
-      byCategory: { personal: 2, work: 3 },
-    });
+  it("/status includes model and uptime", async () => {
+    const { handler, botInstance } = await createBot();
 
     handler(makeMsg("/status"));
     await flush();
@@ -549,29 +528,6 @@ describe("TelegramIntegration", () => {
       String(c[1]).includes("Model:")
     );
     expect(statusMsg).toBeTruthy();
-    expect(String(statusMsg[1])).toContain("5");
-  });
-
-  it("/memories shows categorized facts with timestamps", async () => {
-    const { handler, botInstance, memory } = await createBot();
-
-    memory.getAllFacts.mockReturnValue({
-      name: makeFact("Sean", "personal"),
-      "project-x": makeFact("React app", "work"),
-    });
-    memory.getStats.mockReturnValue({
-      totalFacts: 2,
-      byCategory: { personal: 1, work: 1 },
-    });
-
-    handler(makeMsg("/memories"));
-    await flush();
-
-    const msg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
-      String(c[1]).includes("Memories")
-    );
-    expect(msg).toBeTruthy();
-    expect(String(msg[1])).toContain("2 total");
   });
 
   it("passes userId to agent.run", async () => {
@@ -597,22 +553,6 @@ describe("TelegramIntegration", () => {
       "hello",
       { totalCostUsd: 0.01 }
     );
-  });
-
-  it("triggers summary for expensive sessions", async () => {
-    const agent = makeAgent();
-    agent.shouldSummarize.mockReturnValue(true);
-    agent.generateSummary.mockResolvedValue("- Did stuff\n- Made decisions");
-
-    const { handler, memory } = await createBot(agent);
-
-    handler(makeMsg("complex task"));
-    await flush();
-
-    expect(agent.shouldSummarize).toHaveBeenCalled();
-    // Give the fire-and-forget summary time to complete
-    await flush();
-    expect(agent.generateSummary).toHaveBeenCalledWith("sess-1");
   });
 
   it("/new actually prevents session resumption on next message", async () => {
@@ -978,22 +918,4 @@ describe("TelegramIntegration", () => {
     expect(connMsg).toBeTruthy();
   });
 
-  it("/remember stores fact and /forget deletes it", async () => {
-    const { handler, botInstance, memory } = await createBot();
-
-    handler(makeMsg("/remember city=Melbourne"));
-    await flush();
-
-    expect(memory.setFact).toHaveBeenCalledWith("city", "Melbourne");
-    const remMsg = botInstance.sendMessage.mock.calls.find((c: unknown[]) =>
-      String(c[1]).includes("Remembered")
-    );
-    expect(remMsg).toBeTruthy();
-
-    memory.deleteFact.mockReturnValue(true);
-    handler(makeMsg("/forget city"));
-    await flush();
-
-    expect(memory.deleteFact).toHaveBeenCalledWith("city");
-  });
 });

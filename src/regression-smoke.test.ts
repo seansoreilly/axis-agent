@@ -7,9 +7,9 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-// Mock the SDK to avoid real API calls
-vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: vi.fn(),
+// Mock child_process to avoid spawning real claude CLI
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(),
 }));
 
 // Mock auth to avoid hitting real OAuth
@@ -50,12 +50,6 @@ describe("Smoke: component initialization", () => {
   it("SqliteStore initializes, creates tables, and supports CRUD", async () => {
     const { SqliteStore } = await import("./persistence.js");
     const store = new SqliteStore(memoryDir);
-
-    // Facts
-    store.setFact("test-key", "test-value");
-    expect(store.getFactValue("test-key")).toBe("test-value");
-    expect(store.deleteFact("test-key")).toBe(true);
-    expect(store.getFactValue("test-key")).toBeUndefined();
 
     // Sessions
     store.recordSession("sess-1", 12345, "hello");
@@ -161,10 +155,6 @@ describe("Smoke: component initialization", () => {
     });
 
     expect(scheduler.list().length).toBe(1);
-
-    // Persist a memory fact
-    store.setFact("smoke-test", "it works", "system");
-    expect(store.getFactValue("smoke-test")).toBe("it works");
 
     // Boot gateway
     const app = await createGateway({

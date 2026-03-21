@@ -1,4 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import Fastify from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -62,6 +64,7 @@ interface GatewayOptions {
   scheduler: Scheduler;
   jobs?: JobService;
   store?: SqliteStore;
+  workDir?: string;
   owntracksToken?: string;
   gatewayApiToken?: string;
   voiceService?: VoiceService;
@@ -246,7 +249,7 @@ export async function createGateway(
   }); // end protectedRoutes
 
   // OwnTracks location ingestion (own auth, outside protected routes)
-  if (owntracksToken && store) {
+  if (owntracksToken && opts.workDir) {
     app.post<{ Body: OwnTracksLocation }>("/owntracks", async (request, reply) => {
       // Accept Bearer token OR HTTP Basic auth (OwnTracks iOS uses Basic)
       const auth = request.headers.authorization ?? "";
@@ -281,7 +284,7 @@ export async function createGateway(
         receivedAt: new Date().toISOString(),
       };
 
-      store.setFact("current-location", JSON.stringify(location), "personal");
+      writeFileSync(join(opts.workDir!, "current-location.json"), JSON.stringify(location));
       info("gateway", `Location updated: ${body.lat},${body.lon} (acc: ${body.acc ?? "?"}m)`);
       metrics.increment("gateway.owntracks.updates");
 

@@ -21,32 +21,31 @@ npx vitest run src/telegram.test.ts  # Run a single test file
 
 ## Project Overview
 
-Axis Agent — always-on AI agent powered by the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) with Telegram as the primary interface. Deployed on AWS Lightsail behind Tailscale VPN, running as a systemd service.
+Axis Agent — always-on AI agent powered by the **Claude Code CLI** (`claude`) with Telegram as the primary interface. Deployed on AWS Lightsail behind Tailscale VPN, running as a systemd service.
 
 ## Architecture
 
-**Entrypoint flow** (`src/index.ts`): loads config → runs preflight health checks → creates Memory, Agent, Scheduler, TelegramIntegration → starts Telegram polling + Fastify HTTP gateway (with inbound SMS handler) → registers graceful shutdown handlers.
+**Entrypoint flow** (`src/index.ts`): loads config → runs preflight health checks → creates Agent, Scheduler, TelegramIntegration → starts Telegram polling + Fastify HTTP gateway (with inbound SMS handler) → registers graceful shutdown handlers.
 
 **Key components:**
-- `Agent` (`src/agent.ts`) — wraps SDK `query()`, returning `Promise<AgentResult>`. Delegates prompt construction to `PromptBuilder`. Loads `SOUL.md` personality file if present (checks cwd and parent dir). Supports session resumption (`options.resume`), per-call model override, and `AbortSignal` for cancellation.
-- `PromptBuilder` (`src/prompt-builder.ts`) — builds tiered system prompt: core prompt (always included) + extended prompt (injected on first message only, not on resumed sessions). Memory context splits facts into core (personal/preference, always included) vs other categories (capped at 20). Prompt sections defined inline. Security policies from `policies.ts` are injected into every system prompt.
+- `Agent` (`src/agent.ts`) — spawns the `claude` CLI as a subprocess with `--output-format stream-json --verbose --dangerously-skip-permissions --append-system-prompt`. Injects dynamic context (scheduled tasks, security policies, current datetime) via `--append-system-prompt`. Claude Code auto-discovers `SOUL.md`, `CLAUDE.md`, `.mcp.json`, and skills from `workDir`. Uses `--resume <sessionId>` for session continuity (full history preserved). Returns `Promise<AgentResult>`. Auth: Max subscription OAuth (no `ANTHROPIC_API_KEY` needed).
+- `DynamicContextBuilder` (`src/dynamic-context.ts`) — builds the `--append-system-prompt` payload: current datetime (Melbourne timezone), scheduled tasks list, security policies. No memory injection — Claude Code handles that natively via auto-memory.
 - `Policies` (`src/policies.ts`) — declarative blocked-command policy system. Defines regex patterns for destructive commands (`rm -rf /`, `shutdown`, `mkfs`, `curl | bash`, etc.). Provides `checkBlockedCommand()` for hard enforcement and `buildPolicyPromptSection()` for soft enforcement via system prompt injection.
 - `Preflight` (`src/preflight.ts`) — startup health checks. Validates work/memory directory permissions, OAuth credentials, `~/.claude` writability, Telegram bot token format, and Telegram API reachability. Logs clear pass/fail diagnostics. Non-fatal — agent starts with warnings on failure.
-- `TelegramIntegration` (`src/telegram.ts`) — polling-mode bot. Handles commands (`/new`, `/cancel`, `/retry`, `/model`, `/cost`, `/schedule`, `/tasks`, `/remember`, `/forget`, `/memories`, `/status`, `/post`, `/call`), inline keyboard callbacks, photo/voice/document uploads, reply context, and per-user state (model override, cost tracking, abort controller, recent photos). Constructor takes optional `Scheduler` as 5th param and optional `VoiceService` as 6th param. Delegates to extracted modules:
+- `TelegramIntegration` (`src/telegram.ts`) — polling-mode bot. Handles commands (`/new`, `/cancel`, `/retry`, `/model`, `/cost`, `/schedule`, `/tasks`, `/status`, `/post`, `/call`), inline keyboard callbacks, photo/voice/document uploads, reply context, and per-user state (model override, cost tracking, abort controller, recent photos). Constructor signature: `(botToken, allowedUsers, agent, store, workDir, scheduler?, voiceService?)`. Delegates to extracted modules:
   - `TelegramMediaService` (`src/telegram-media.ts`) — file download, photo handling
   - `TelegramProgressReporter` (`src/telegram-progress.ts`) — delayed ack messages + periodic status updates
   - `TELEGRAM_COMMANDS` (`src/telegram-commands.ts`) — command registry with names/descriptions
 - `Scheduler` (`src/scheduler.ts`) — cron-based task runner via `node-cron` with Australia/Melbourne timezone. Max 20 tasks, minimum 5-minute interval. Persists tasks to SQLite and restores on startup. Supports monitor-style tasks via optional `checkCommand` field — the command runs first via `execFile` (no shell interpretation), and the agent only runs if it produces non-empty output. Check commands are validated for shell metacharacters on add — pipes, semicolons, backticks, subshells, and redirects are rejected. `runNow(id)` triggers any task on demand (bypasses cron schedule). Results delivered via callback (wired to Telegram notifications in index.ts).
-- `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Uses `@fastify/helmet` for security headers and `@fastify/rate-limit` for rate limiting (60 req/min global, 5/min on `/webhook`, 3/min on `/calls`). Protected routes require `Authorization: Bearer <GATEWAY_API_TOKEN>` when the token is configured (backward-compatible: no auth enforced if unset). Token comparison uses `crypto.timingSafeEqual` to prevent timing attacks. Public: `GET /health`. Protected: `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `POST /tasks/:id/run` (trigger on demand), `GET/POST /calls`, `GET /admin/*`, `POST /twilio/inbound-sms`. Self-authenticated: `POST /owntracks` (own Bearer/Basic auth via `OWNTRACKS_TOKEN`).
+- `Gateway` (`src/gateway.ts`) — Fastify HTTP API on localhost:8080. Uses `@fastify/helmet` for security headers and `@fastify/rate-limit` for rate limiting (60 req/min global, 5/min on `/webhook`, 3/min on `/calls`). Protected routes require `Authorization: Bearer <GATEWAY_API_TOKEN>` when the token is configured (backward-compatible: no auth enforced if unset). Token comparison uses `crypto.timingSafeEqual` to prevent timing attacks. Public: `GET /health`. Protected: `POST /webhook`, `GET /tasks`, `POST /tasks`, `DELETE /tasks/:id`, `POST /tasks/:id/run` (trigger on demand), `GET/POST /calls`, `GET /admin/*`, `POST /twilio/inbound-sms`. Self-authenticated: `POST /owntracks` (own Bearer/Basic auth via `OWNTRACKS_TOKEN`). OwnTracks writes `current-location.json` to `workDir`.
 - `JobService` (`src/jobs.ts`) — async job queue for webhook/scheduler prompts. Enqueues prompt jobs, runs them via the Agent, supports retries (`maxAttempts`). Backed by `SqliteStore`.
-- `SqliteStore` (`src/persistence.ts`) — SQLite-backed persistence using `node:sqlite` (`DatabaseSync`). Stores memory facts, sessions, scheduled tasks, and job records. This is a Node.js 22+ built-in — no external SQLite dependency needed.
+- `SqliteStore` (`src/persistence.ts`) — SQLite-backed persistence using `node:sqlite` (`DatabaseSync`). Stores sessions (cost tracking), scheduled tasks, job records, and events. No facts/memory table — Claude Code handles memory natively via auto-memory. Node.js 22+ built-in — no external SQLite dependency needed.
 - `MetricsRegistry` (`src/metrics.ts`) — in-memory counters and gauges for operational metrics.
 - `Auth` (`src/auth.ts`) — OAuth token refresh for Claude credentials (`~/.claude/.credentials.json`). Proactively refreshes tokens 10 minutes before expiry.
 - `TrelloMcpServer` (`src/trello-mcp-server.ts`) — custom MCP server exposing Trello REST API as tools (list boards, create/update/archive cards, manage checklists, comments). Runs as stdio MCP server configured in `.mcp.json`. Requires `TRELLO_API_KEY` and `TRELLO_API_TOKEN` env vars.
-- `VoiceService` (`src/voice.ts`) — manages outbound voice calls via Retell.ai SDK (`retell-sdk`). Uses a base Retell agent with per-call overrides via `agent_override` and `retell_llm_dynamic_variables` to inject dynamic system prompts. LLM: Claude 4.6 Sonnet. Uses `start_speaker: "user"` so the AI waits for the human to speak first. Supports `recipientName` for personalized greetings and `OWNER_NAME` env var for "calling on behalf of" context. `contextToQuestion()` transforms instruction-style context ("Ask what they're having") into natural spoken questions. Built-in `end_call` tool for hanging up. Polls call status via `client.call.retrieve()` until ended, reads structured transcript from `transcript_object`. Injects SOUL.md personality and memory context into voice prompts. Callback delivers results (with transcript) to Telegram.
+- `VoiceService` (`src/voice.ts`) — manages outbound voice calls via Retell.ai SDK (`retell-sdk`). Uses a base Retell agent with per-call overrides via `agent_override` and `retell_llm_dynamic_variables` to inject dynamic system prompts. LLM: Claude 4.6 Sonnet. Uses `start_speaker: "user"` so the AI waits for the human to speak first. Supports `recipientName` for personalized greetings and `OWNER_NAME` env var for "calling on behalf of" context. `contextToQuestion()` transforms instruction-style context ("Ask what they're having") into natural spoken questions. Built-in `end_call` tool for hanging up. Polls call status via `client.call.retrieve()` until ended, reads structured transcript from `transcript_object`. Callback delivers results (with transcript) to Telegram.
 - `TaskMonitor` (`src/task-monitor.ts`) — tracks active agent tasks with elapsed time, status, and long-running detection (5-min threshold). Per-user task listing for `/task-status` command.
 - `TeamCoordinator` (`src/team-coordinator.ts`) — orchestrates parallel execution of specialized agents (research, reasoning, explore) using fan-out/fan-in pattern. Generates team plans with budget allocation, synthesizes results. Model routing: Opus for reasoning, Sonnet for research/explore.
-- `Memory` (`src/memory.ts`) — persistence layer backed by `SqliteStore`. Stores key-value facts and session records. `getLastSession(userId)` enables session persistence across restarts.
 - `Logger` (`src/logger.ts`) — minimal structured logger writing to stdout/stderr with `[axis-agent] [component]` prefix. Used by all components via `info()` and `error()` functions.
 - `Config` (`src/config.ts`) — loads from env vars. Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. Optional: `PORT` (8080), `CLAUDE_MODEL` (claude-opus-4-6), `CLAUDE_MAX_TURNS` (25), `CLAUDE_MAX_BUDGET_USD` (5), `CLAUDE_AGENT_TIMEOUT_MS` (600000 / 10 min), `CLAUDE_WORK_DIR`, `MEMORY_DIR`, `OWNTRACKS_TOKEN`, `GATEWAY_API_TOKEN`, `RETELL_API_KEY`, `RETELL_PHONE_NUMBER`, `RETELL_AGENT_ID`, `RETELL_VOICE_ID`, `OWNER_NAME`. Auth: uses Max subscription OAuth credentials from `~/.claude/.credentials.json` (auto-refreshed by `Auth` module). No `ANTHROPIC_API_KEY` needed.
 
@@ -54,20 +53,23 @@ Axis Agent — always-on AI agent powered by the Claude Agent SDK (`@anthropic-a
 
 This project uses `"type": "module"` — all imports must use `.js` extensions (e.g., `import { Agent } from "./agent.js"`), even for TypeScript source files. This is a Node16 module resolution requirement.
 
-## SDK Usage Patterns
+## CLI Usage Patterns
 
-- `bypassPermissions` + `allowDangerouslySkipPermissions: true` is required for headless/systemd environments. Other permission modes prompt for TTY input and fail.
-- `query()` returns an async generator. Stream messages looking for `type === "result"` for the final output and `type === "system"` with `subtype === "init"` for session ID.
-- Session resumption: pass `options.resume = sessionId` to continue a previous conversation.
-- Sessions costing >= $0.05 get an auto-generated summary (via `claude-haiku-4-5-20251001`, `maxBudgetUsd: 0.02`) that's injected when resuming, providing context continuity.
-- `allowedTools` controls which tools are available but does NOT replace permission prompts in non-bypass modes.
+- `claude -p --output-format stream-json --verbose --dangerously-skip-permissions` — headless invocation. `stream-json` emits newline-delimited JSON events; parse `type === "result"` for final output and `type === "system" && subtype === "init"` for session ID.
+- `--append-system-prompt` — appends dynamic context on top of Claude Code's built-in system prompt (keeps SOUL.md/CLAUDE.md personality intact).
+- `--resume <sessionId>` — resumes a previous conversation. Full history preserved; no custom summary injection needed.
+- `--dangerously-skip-permissions` — required for headless/systemd environments. Without it, Claude Code prompts for TTY input and fails.
+- `--allowed-tools` — limits which tools are available to the agent.
+- `--agents` — configures sub-agents the main agent can delegate to.
+- Claude Code auto-discovers: `SOUL.md` (personality), `CLAUDE.md` (instructions), `.mcp.json` (MCP servers), `.claude/skills/` (skills) from `workDir`.
+- Auto-memory: Claude Code manages memory natively. No custom facts storage needed.
 
 ## Testing
 
-Tests use vitest with ESM module mocking. Test files: `telegram.test.ts`, `agent.test.ts`, `scheduler.test.ts`, `prompt-builder.test.ts`, `memory.test.ts`, `jobs.test.ts`, `gateway.test.ts`, `voice.test.ts`, `team-coordinator.test.ts`. Key patterns:
+Tests use vitest with ESM module mocking. Test files: `telegram.test.ts`, `agent.test.ts`, `scheduler.test.ts`, `dynamic-context.test.ts`, `jobs.test.ts`, `gateway.test.ts`, `voice.test.ts`, `team-coordinator.test.ts`. Key patterns:
 - `vi.mock("node-telegram-bot-api")` with a shared `mockBotInstance` variable (ESM doesn't support `mock.instances`)
 - Fire-and-forget handlers need `flush()` helper: `const flush = () => new Promise(r => setTimeout(r, 10))`
-- Mock Memory must include `getLastSession: vi.fn().mockReturnValue(undefined)` or session persistence code will fail
+- Mock store must include `recordSession: vi.fn()` and `getLastSession: vi.fn().mockReturnValue(undefined)`
 - Test files are excluded from `tsconfig.json` (`"src/**/*.test.ts"` in exclude) to keep them out of `dist/`
 
 ## Systemd Hardening
@@ -85,7 +87,7 @@ PrivateDevices=false  # Chromium needs /dev/shm
 
 ## Common Issues
 
-- **SDK exit code 1** — filesystem permission issue from systemd sandboxing. Check `ReadWritePaths`.
+- **CLI exit code 1** — filesystem permission issue from systemd sandboxing. Check `ReadWritePaths`. `~/.claude/` must be writable.
 - **Exit code 226/NAMESPACE** — a directory in `ReadWritePaths` doesn't exist. Create it first.
 - **Telegram redelivers on restart** — polling mode picks up unacked messages. Benign; may hit stale session errors.
 - **Stale dist/ test files** — vitest may pick up `dist/telegram.test.js`. Delete it or rebuild.
@@ -168,7 +170,7 @@ When adding a new slash command, update ALL of these locations:
 1. **`handleCommand()` switch statement** in `src/telegram.ts` — the actual handler
 2. **`/start` case help text** — welcome message listing commands
 3. **`default` case command list** — fallback "unknown command" response
-4. **`src/agent.ts` system prompt** — "Telegram Commands" section so the agent knows about it
+4. **`workspace-CLAUDE.md` Telegram Commands section** — so the agent knows about it (deployed to `workDir`)
 5. **Telegram Bot API `setMyCommands`** — update via API call so commands appear in Telegram's autocomplete:
    ```bash
    TOKEN=$(grep TELEGRAM_BOT_TOKEN .env | cut -d= -f2)

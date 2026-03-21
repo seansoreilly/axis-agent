@@ -1,5 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
-import { unlinkSync } from "node:fs";
+import { unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Agent, AgentResult } from "./agent.js";
 import type { SqliteStore } from "./persistence.js";
 import type { Scheduler } from "./scheduler.js";
@@ -62,6 +63,7 @@ export class TelegramIntegration {
   private botToken: string;
   private agent: Agent;
   private store: SqliteStore;
+  private workDir: string;
   private scheduler?: Scheduler;
   private voiceService?: VoiceService;
   private allowedUsers: Set<number>;
@@ -77,6 +79,7 @@ export class TelegramIntegration {
     allowedUsers: number[],
     agent: Agent,
     store: SqliteStore,
+    workDir: string,
     scheduler?: Scheduler,
     voiceService?: VoiceService
   ) {
@@ -84,6 +87,7 @@ export class TelegramIntegration {
     this.botToken = botToken;
     this.agent = agent;
     this.store = store;
+    this.workDir = workDir;
     this.scheduler = scheduler;
     this.voiceService = voiceService;
     this.allowedUsers = new Set(allowedUsers);
@@ -350,11 +354,6 @@ export class TelegramIntegration {
 
       await progress.stop();
       await this.sendResponse(chatId, result.text, result);
-
-      // Generate conversation summary for expensive sessions (fire-and-forget)
-      if (this.agent.shouldSummarize(result) && result.sessionId) {
-        this.generateAndStoreSummary(result.sessionId, userId).catch(() => {});
-      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       logError("telegram", `Agent run failed for user ${userId}: ${errMsg}`);
@@ -495,7 +494,7 @@ export class TelegramIntegration {
     this.persistLocation(loc);
   }
 
-  /** Persist location to memory store so the agent can reference it. */
+  /** Persist location to a JSON file so the agent can reference it. */
   private persistLocation(loc: UserLocation): void {
     const utcDate = new Date(loc.timestamp);
     const value = JSON.stringify({
@@ -507,7 +506,7 @@ export class TelegramIntegration {
       at: utcDate.toISOString(),
       localTime: utcDate.toLocaleString("en-AU", { timeZone: "Australia/Melbourne", dateStyle: "medium", timeStyle: "short" }),
     });
-    this.store.setFact("current-location", value, "personal");
+    writeFileSync(join(this.workDir, "current-location.json"), value);
   }
 
   private async handleCommand(
@@ -661,84 +660,16 @@ export class TelegramIntegration {
         break;
       }
 
-      case "/remember": {
-        const eqIndex = argText.indexOf("=");
-        if (eqIndex < 1) {
-          await this.bot.sendMessage(chatId, "Usage: /remember key=value");
-          return;
-        }
-        const key = sanitizeKey(argText.substring(0, eqIndex).trim());
-        const value = argText.substring(eqIndex + 1).trim();
-        if (!key || !value) {
-          await this.bot.sendMessage(chatId, "Both key and value are required.");
-          return;
-        }
-        this.store.setFact(key, value);
-        await this.bot.sendMessage(chatId, `Remembered: ${key}`);
-        break;
-      }
-
-      case "/forget": {
-        const key = sanitizeKey(argText.trim());
-        if (this.store.deleteFact(key)) {
-          await this.bot.sendMessage(chatId, `Forgot: ${key}`);
-        } else {
-          await this.bot.sendMessage(chatId, `No memory found for: ${key}`);
-        }
-        break;
-      }
-
-      case "/memories": {
-        const facts = this.store.getAllFacts();
-        const entries = Object.entries(facts);
-        if (entries.length === 0) {
-          await this.bot.sendMessage(chatId, "No memories stored.");
-        } else {
-          // Sort by updatedAt descending
-          entries.sort(([, a], [, b]) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-          );
-          const list = entries
-            .map(([k, f]) => {
-              const age = this.formatAge(new Date(f.updatedAt));
-              return `- *${k}*: ${f.value} _[${f.category}, ${age}]_`;
-            })
-            .join("\n");
-          const stats = this.store.getStats();
-          const catSummary = Object.entries(stats.byCategory)
-            .map(([c, n]) => `${c}: ${n}`)
-            .join(", ");
-          await this.bot
-            .sendMessage(
-              chatId,
-              `Memories (${stats.totalFacts} total — ${catSummary}):\n${list}`,
-              { parse_mode: "Markdown" }
-            )
-            .catch(() =>
-              this.bot.sendMessage(
-                chatId,
-                `Memories (${stats.totalFacts}):\n${entries.map(([k, f]) => `- ${k}: ${f.value}`).join("\n")}`
-              )
-            );
-        }
-        break;
-      }
-
       case "/status": {
         const state = this.getState(userId);
         const model = state.modelOverride
           ? Object.entries(VALID_MODELS).find(([, v]) => v === state.modelOverride)?.[0] ?? "custom"
           : "default";
-        const memStats = this.store.getStats();
-        const catLine = Object.entries(memStats.byCategory)
-          .map(([c, n]) => `${c}:${n}`)
-          .join(" ");
         await this.bot.sendMessage(
           chatId,
           [
             `Uptime: ${Math.floor(process.uptime())}s`,
             `Active sessions: ${this.userSessions.size}`,
-            `Memories: ${memStats.totalFacts} (${catLine})`,
             `Model: ${model}`,
             `Session cost: $${state.totalCostUsd.toFixed(4)}`,
             this.scheduler
@@ -1081,28 +1012,6 @@ export class TelegramIntegration {
       await this.bot.sendMessage(chatId, chunks[i], opts).catch(
         () => this.bot.sendMessage(chatId, chunks[i], plainOpts)
       );
-    }
-  }
-
-  private formatAge(date: Date): string {
-    const diffMs = Date.now() - date.getTime();
-    const mins = Math.floor(diffMs / 60_000);
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  }
-
-  private async generateAndStoreSummary(
-    sessionId: string,
-    userId: number
-  ): Promise<void> {
-    info("telegram", `Generating conversation summary for session ${sessionId}`);
-    const summary = await this.agent.generateSummary(sessionId);
-    if (summary) {
-      this.store.updateSessionSummary(sessionId, summary);
-      info("telegram", `Stored conversation summary for user ${userId}`);
     }
   }
 

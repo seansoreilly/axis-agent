@@ -26,11 +26,16 @@ function makeScheduler() {
   };
 }
 
-function makeStore() {
+let capturedWritePath: string | null = null;
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
   return {
-    setFact: vi.fn(),
+    ...actual,
+    writeFileSync: vi.fn().mockImplementation((path: string) => {
+      capturedWritePath = path;
+    }),
   };
-}
+});
 
 function authHeader() {
   return { authorization: `Bearer ${TEST_TOKEN}` };
@@ -117,10 +122,10 @@ describe("Gateway", () => {
   });
 
   it("accepts owntracks updates with bearer auth", async () => {
+    capturedWritePath = null;
     const { createGateway } = await import("./gateway.js");
     const agent = makeAgent();
     const scheduler = makeScheduler();
-    const store = makeStore();
 
     app = await createGateway({
       port: 0,
@@ -128,8 +133,7 @@ describe("Gateway", () => {
       agent: agent as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       scheduler: scheduler as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      store: store as any,
+      workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
@@ -142,11 +146,7 @@ describe("Gateway", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(store.setFact).toHaveBeenCalledWith(
-      "current-location",
-      expect.any(String),
-      "personal"
-    );
+    expect(capturedWritePath).toContain("current-location.json");
   });
 
   it("exposes admin endpoints", async () => {

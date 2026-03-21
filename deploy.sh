@@ -116,6 +116,9 @@ rsync -avz --delete \
 echo "Installing dependencies on remote..."
 ssh -i "$SSH_KEY" "$REMOTE_HOST" "cd $REMOTE_DIR && npm install --omit=dev"
 
+echo "Deploying workspace CLAUDE.md to workDir..."
+ssh -i "$SSH_KEY" "$REMOTE_HOST" "cp $REMOTE_DIR/workspace-CLAUDE.md /home/ubuntu/workspace/CLAUDE.md"
+
 echo "Installing systemd service..."
 ssh -i "$SSH_KEY" "$REMOTE_HOST" "sudo cp $REMOTE_DIR/systemd/claude-agent.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable claude-agent && sudo systemctl restart claude-agent"
 

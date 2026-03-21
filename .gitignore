@@ -12,6 +12,7 @@ __pycache__/
 *.pem
 *.key
 nanobanana-output/
+tests/*/results.json
 *:Zone.Identifier
 .claude/skills/google-contacts/
 .claude-agent/
