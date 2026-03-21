@@ -120,7 +120,18 @@ export class PersistentProcess {
     });
 
     this.proc.stdout?.on("data", (chunk: Buffer) => {
-      this.handleStdout(chunk.toString());
+      const data = chunk.toString();
+      if (this._state === "starting") {
+        info("persistent-process", `stdout during startup (${data.length} bytes): ${data.substring(0, 200)}`);
+      }
+      this.handleStdout(data);
+    });
+
+    this.proc.stderr?.on("data", (chunk: Buffer) => {
+      const data = chunk.toString().trim();
+      if (data) {
+        info("persistent-process", `stderr: ${data.substring(0, 200)}`);
+      }
     });
 
     this.proc.on("close", (code) => {
