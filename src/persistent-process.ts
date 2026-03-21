@@ -478,7 +478,20 @@ export class ProcessManager {
     this.processes.set(userId, proc);
     this.lastActivity.set(userId, Date.now());
 
-    await proc.ready;
+    // Timeout on startup — if MCP servers hang, don't block forever
+    const startupTimeoutMs = 60_000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Process startup timed out (MCP connection hang?)")), startupTimeoutMs)
+    );
+
+    try {
+      await Promise.race([proc.ready, timeoutPromise]);
+    } catch (err) {
+      proc.kill();
+      this.processes.delete(userId);
+      throw err;
+    }
+
     return proc;
   }
 
