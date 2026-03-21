@@ -465,9 +465,11 @@ export class TelegramIntegration {
       const state = this.getState(userId);
       if (modelKey === "default") {
         state.modelOverride = undefined;
+        this.agent.resetSession(userId);
         await this.bot.sendMessage(chatId, "Switched to default model.");
       } else if (VALID_MODELS[modelKey]) {
         state.modelOverride = VALID_MODELS[modelKey];
+        this.agent.resetSession(userId);
         await this.bot.sendMessage(chatId, `Switched to ${modelKey}.`);
       }
     }
@@ -536,6 +538,7 @@ export class TelegramIntegration {
         const dropped = state.messageQueue.length;
         state.messageQueue = [];
         this.userSessions.delete(userId);
+        this.agent.resetSession(userId);
         await this.bot.sendMessage(
           chatId,
           dropped > 0
@@ -598,9 +601,11 @@ export class TelegramIntegration {
         }
         if (modelKey === "default" || modelKey === "reset") {
           state.modelOverride = undefined;
+          this.agent.resetSession(userId);
           await this.bot.sendMessage(chatId, "Switched to default model.");
         } else if (VALID_MODELS[modelKey]) {
           state.modelOverride = VALID_MODELS[modelKey];
+          this.agent.resetSession(userId);
           await this.bot.sendMessage(chatId, `Switched to ${modelKey}.`);
         } else {
           await this.bot.sendMessage(

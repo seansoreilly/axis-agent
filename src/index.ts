@@ -156,6 +156,7 @@ async function main(): Promise<void> {
     clearInterval(tokenRefreshTimer);
     telegram.stop();
     scheduler.stopAll();
+    agent.shutdown();
     gateway.close().finally(() => process.exit(0));
   };
 

@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import type { Config } from "./config.js";
 import type { SqliteStore } from "./persistence.js";
-import { error as logError } from "./logger.js";
+import { error as logError, info } from "./logger.js";
 import { ensureValidToken } from "./auth.js";
 import { DynamicContextBuilder } from "./dynamic-context.js";
+import { ProcessManager } from "./persistent-process.js";
 
 export interface RateLimitInfo {
   status: "allowed" | "allowed_warning" | "rejected";
@@ -175,12 +176,34 @@ function spawnClaude(args: string[], opts: {
 
 export class Agent {
   private readonly contextBuilder: DynamicContextBuilder;
+  private readonly processManager: ProcessManager;
+  private readonly agents = {
+    research: {
+      description: "Thorough research and analysis agent for tasks requiring investigation, comparison, multi-source research, synthesizing documents, technical analysis, and moderate coding tasks. Use when the main agent lacks the depth needed.",
+      prompt: "You are a thorough research assistant. Investigate deeply, cross-reference sources, and provide well-structured findings.",
+      model: "sonnet",
+    },
+    reasoning: {
+      description: "Advanced reasoning agent for complex architecture decisions, nuanced creative writing, multi-step logical reasoning, holistic code review, and strategic planning. Use sparingly — only when the task genuinely requires deep thought.",
+      prompt: "You are an advanced reasoning assistant. Think carefully and provide thorough, well-reasoned analysis.",
+      model: "opus",
+    },
+  };
+  private readonly allowedTools = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch", "Task", "mcp__*"];
 
   constructor(
     private readonly config: Config,
     store: SqliteStore,
   ) {
     this.contextBuilder = new DynamicContextBuilder(store);
+    this.processManager = new ProcessManager({
+      model: config.claude.model,
+      workDir: config.claude.workDir,
+      maxBudgetUsd: config.claude.maxBudgetUsd,
+      systemPrompt: this.contextBuilder.buildDynamicContext(),
+      allowedTools: this.allowedTools,
+      agents: this.agents,
+    });
   }
 
   async run(
@@ -189,6 +212,61 @@ export class Agent {
   ): Promise<AgentResult> {
     const { claude } = this.config;
     const model = opts?.model ?? claude.model;
+    const timeoutMs = opts?.timeoutMs ?? claude.agentTimeoutMs;
+
+    // Use persistent process for user-initiated requests
+    if (opts?.userId) {
+      return this.runPersistent(prompt, opts.userId, model, timeoutMs, opts.signal);
+    }
+
+    // Fall back to one-shot spawn for jobs/webhooks (no userId)
+    return this.runOneShot(prompt, model, timeoutMs, opts?.sessionId, opts?.signal);
+  }
+
+  /**
+   * Send prompt to a persistent process for this user.
+   * Falls back to one-shot spawn on process crash.
+   */
+  private async runPersistent(
+    prompt: string,
+    userId: number,
+    model: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<AgentResult> {
+    try {
+      const proc = await this.processManager.getOrCreate(userId, model);
+      const result = await proc.sendPrompt(prompt, { timeoutMs, signal });
+      return {
+        text: result.text,
+        sessionId: result.sessionId,
+        durationMs: result.durationMs,
+        totalCostUsd: result.totalCostUsd,
+        isError: result.isError,
+        isTimeout: result.isTimeout,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (/dead|crash|exited/i.test(msg)) {
+        info("agent", `Persistent process failed for user ${userId}, falling back to one-shot: ${msg}`);
+        this.processManager.reset(userId);
+        return this.runOneShot(prompt, model, timeoutMs, undefined, signal);
+      }
+      return this.makeErrorResult(msg);
+    }
+  }
+
+  /**
+   * Legacy one-shot spawn — used for jobs/webhooks and as fallback.
+   */
+  private async runOneShot(
+    prompt: string,
+    model: string,
+    timeoutMs: number,
+    sessionId?: string,
+    signal?: AbortSignal,
+  ): Promise<AgentResult> {
+    const { claude } = this.config;
     const dynamicContext = this.contextBuilder.buildDynamicContext();
 
     const args: string[] = [
@@ -199,35 +277,22 @@ export class Agent {
       "--model", model,
       "--max-budget-usd", String(claude.maxBudgetUsd),
       "--append-system-prompt", dynamicContext,
-      "--allowed-tools", "Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch", "Task", "mcp__*",
-      "--agents", JSON.stringify({
-        research: {
-          description: "Thorough research and analysis agent for tasks requiring investigation, comparison, multi-source research, synthesizing documents, technical analysis, and moderate coding tasks. Use when the main agent lacks the depth needed.",
-          prompt: "You are a thorough research assistant. Investigate deeply, cross-reference sources, and provide well-structured findings.",
-          model: "sonnet",
-        },
-        reasoning: {
-          description: "Advanced reasoning agent for complex architecture decisions, nuanced creative writing, multi-step logical reasoning, holistic code review, and strategic planning. Use sparingly — only when the task genuinely requires deep thought.",
-          prompt: "You are an advanced reasoning assistant. Think carefully and provide thorough, well-reasoned analysis.",
-          model: "opus",
-        },
-      }),
+      "--allowed-tools", ...this.allowedTools,
+      "--agents", JSON.stringify(this.agents),
     ];
 
-    if (opts?.sessionId) {
-      args.push("--resume", opts.sessionId);
+    if (sessionId) {
+      args.push("--resume", sessionId);
     }
 
     args.push(prompt);
-
-    const timeoutMs = opts?.timeoutMs ?? claude.agentTimeoutMs;
 
     await ensureValidToken();
 
     try {
       const result = await spawnClaude(args, {
         cwd: claude.workDir,
-        signal: opts?.signal,
+        signal,
         timeoutMs,
       });
 
@@ -240,32 +305,49 @@ export class Agent {
         isTimeout: result.isTimeout,
       };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logError("agent", `Run failed: ${msg}`);
-
-      let resultText: string;
-      let isTimeout = false;
-      if (/rate limit|429|529|overloaded/i.test(msg)) {
-        resultText = "Rate limited. Please wait a few minutes and try again.";
-      } else if (/timeout|ETIMEDOUT|timed out/i.test(msg)) {
-        isTimeout = true;
-        resultText = "Request timed out. Try a shorter request or start a /new session.";
-      } else if (/ECONNRESET|ECONNREFUSED|socket hang up/i.test(msg)) {
-        resultText = "Connection error — usually temporary, please retry.";
-      } else if (/ENOENT/i.test(msg)) {
-        resultText = "Claude Code CLI not found. Ensure `claude` is installed and in PATH.";
-      } else {
-        resultText = "An internal error occurred. Please try again.";
-      }
-
-      return {
-        text: resultText,
-        sessionId: "",
-        durationMs: 0,
-        totalCostUsd: 0,
-        isError: true,
-        isTimeout,
-      };
+      return this.makeErrorResult(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  private makeErrorResult(msg: string): AgentResult {
+    logError("agent", `Run failed: ${msg}`);
+
+    let resultText: string;
+    let isTimeout = false;
+    if (/rate limit|429|529|overloaded/i.test(msg)) {
+      resultText = "Rate limited. Please wait a few minutes and try again.";
+    } else if (/timeout|ETIMEDOUT|timed out/i.test(msg)) {
+      isTimeout = true;
+      resultText = "Request timed out. Try a shorter request or start a /new session.";
+    } else if (/ECONNRESET|ECONNREFUSED|socket hang up/i.test(msg)) {
+      resultText = "Connection error — usually temporary, please retry.";
+    } else if (/ENOENT/i.test(msg)) {
+      resultText = "Claude Code CLI not found. Ensure `claude` is installed and in PATH.";
+    } else {
+      resultText = "An internal error occurred. Please try again.";
+    }
+
+    return {
+      text: resultText,
+      sessionId: "",
+      durationMs: 0,
+      totalCostUsd: 0,
+      isError: true,
+      isTimeout,
+    };
+  }
+
+  /**
+   * Kill the persistent process for a user (used by /new, /model).
+   */
+  resetSession(userId: number): void {
+    this.processManager.reset(userId);
+  }
+
+  /**
+   * Kill all persistent processes (used at shutdown).
+   */
+  shutdown(): void {
+    this.processManager.resetAll();
   }
 }

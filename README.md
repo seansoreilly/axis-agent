@@ -351,7 +351,8 @@ See `CLAUDE.md` for the full secret inventory and `.env.example` for the config 
 src/
   index.ts              # Entry point - starts all services
   config.ts             # Environment config loader
-  agent.ts              # Spawns Claude Code CLI, parses stream-json output
+  agent.ts              # Claude Code CLI orchestrator (persistent + one-shot modes)
+  persistent-process.ts # Long-lived CLI process via --input-format stream-json (multi-turn)
   auth.ts               # OAuth token refresh (proactive + periodic)
   dynamic-context.ts    # Builds --append-system-prompt payload (tasks, policies, datetime)
   gateway.ts            # Fastify HTTP server (webhook + task management + admin endpoints)

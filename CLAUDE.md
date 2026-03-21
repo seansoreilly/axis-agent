@@ -28,7 +28,8 @@ Axis Agent — always-on AI agent powered by the **Claude Code CLI** (`claude`) 
 **Entrypoint flow** (`src/index.ts`): loads config → runs preflight health checks → creates Agent, Scheduler, TelegramIntegration → starts Telegram polling + Fastify HTTP gateway (with inbound SMS handler) → registers graceful shutdown handlers.
 
 **Key components:**
-- `Agent` (`src/agent.ts`) — spawns the `claude` CLI as a subprocess with `--output-format stream-json --verbose --dangerously-skip-permissions --append-system-prompt`. Injects dynamic context (scheduled tasks, security policies, current datetime) via `--append-system-prompt`. Claude Code auto-discovers `SOUL.md`, `CLAUDE.md`, `.mcp.json`, and skills from `workDir`. Uses `--resume <sessionId>` for session continuity (full history preserved). Returns `Promise<AgentResult>`. Auth: Max subscription OAuth (no `ANTHROPIC_API_KEY` needed).
+- `Agent` (`src/agent.ts`) — manages claude CLI interactions. For Telegram users: delegates to `ProcessManager` for persistent multi-turn processes (MCP servers stay connected between messages). For jobs/webhooks: falls back to one-shot spawns. Injects dynamic context via `--append-system-prompt`. Claude Code auto-discovers `SOUL.md`, `CLAUDE.md`, `.mcp.json`, and skills from `workDir`. Returns `Promise<AgentResult>`. Auth: Max subscription OAuth (no `ANTHROPIC_API_KEY` needed).
+- `PersistentProcess` / `ProcessManager` (`src/persistent-process.ts`) — keeps a long-lived `claude` CLI process per user via `--input-format stream-json`. Prompts sent as JSON lines to stdin (`{"type":"user","message":{"role":"user","content":"..."}}`), responses parsed from stream-json stdout events. Supports `interrupt()` via control messages (graceful cancel without killing process). `ProcessManager` maps userId → PersistentProcess, handles idle reaping (10 min default), model switches, and process crash recovery.
 - `DynamicContextBuilder` (`src/dynamic-context.ts`) — builds the `--append-system-prompt` payload: current datetime (Melbourne timezone), scheduled tasks list, security policies. No memory injection — Claude Code handles that natively via auto-memory.
 - `Policies` (`src/policies.ts`) — declarative blocked-command policy system. Defines regex patterns for destructive commands (`rm -rf /`, `shutdown`, `mkfs`, `curl | bash`, etc.). Provides `checkBlockedCommand()` for hard enforcement and `buildPolicyPromptSection()` for soft enforcement via system prompt injection.
 - `Preflight` (`src/preflight.ts`) — startup health checks. Validates work/memory directory permissions, OAuth credentials, `~/.claude` writability, Telegram bot token format, and Telegram API reachability. Logs clear pass/fail diagnostics. Non-fatal — agent starts with warnings on failure.
@@ -55,7 +56,8 @@ This project uses `"type": "module"` — all imports must use `.js` extensions (
 
 ## CLI Usage Patterns
 
-- `claude -p --output-format stream-json --verbose --dangerously-skip-permissions` — headless invocation. `stream-json` emits newline-delimited JSON events; parse `type === "result"` for final output and `type === "system" && subtype === "init"` for session ID.
+- **Persistent multi-turn** (primary, for Telegram users): `claude -p --input-format stream-json --output-format stream-json --verbose --dangerously-skip-permissions` — keeps process alive. Send prompts as JSON lines to stdin: `{"type":"user","message":{"role":"user","content":"..."}}`. Responses stream as JSON events ending with `type === "result"`. Process stays alive until stdin closes. Interrupt via `{"type":"control_request","request":{"subtype":"interrupt"}}`.
+- **One-shot headless** (fallback, for jobs/webhooks): `claude -p --output-format stream-json --verbose --dangerously-skip-permissions` — spawns per call, exits after response. Used when no persistent session needed.
 - `--append-system-prompt` — appends dynamic context on top of Claude Code's built-in system prompt (keeps SOUL.md/CLAUDE.md personality intact).
 - `--resume <sessionId>` — resumes a previous conversation. Full history preserved; no custom summary injection needed.
 - `--dangerously-skip-permissions` — required for headless/systemd environments. Without it, Claude Code prompts for TTY input and fails.
@@ -66,7 +68,7 @@ This project uses `"type": "module"` — all imports must use `.js` extensions (
 
 ## Testing
 
-Tests use vitest with ESM module mocking. Test files: `telegram.test.ts`, `agent.test.ts`, `scheduler.test.ts`, `dynamic-context.test.ts`, `jobs.test.ts`, `gateway.test.ts`, `voice.test.ts`, `team-coordinator.test.ts`. Key patterns:
+Tests use vitest with ESM module mocking. Test files: `telegram.test.ts`, `agent.test.ts`, `persistent-process.test.ts`, `scheduler.test.ts`, `dynamic-context.test.ts`, `jobs.test.ts`, `gateway.test.ts`, `voice.test.ts`, `team-coordinator.test.ts`. Key patterns:
 - `vi.mock("node-telegram-bot-api")` with a shared `mockBotInstance` variable (ESM doesn't support `mock.instances`)
 - Fire-and-forget handlers need `flush()` helper: `const flush = () => new Promise(r => setTimeout(r, 10))`
 - Mock store must include `recordSession: vi.fn()` and `getLastSession: vi.fn().mockReturnValue(undefined)`

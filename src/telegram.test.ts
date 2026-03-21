@@ -41,6 +41,8 @@ function makeAgent(runImpl?: (...args: unknown[]) => unknown) {
           totalCostUsd: 0.01,
           isError: false,
         } satisfies AgentResult),
+    resetSession: vi.fn(),
+    shutdown: vi.fn(),
   };
 }
 
