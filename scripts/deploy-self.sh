@@ -11,6 +11,11 @@ if [ -d "$AGENT_DIR/dist" ]; then
   sudo chown -R ubuntu:ubuntu "$AGENT_DIR/dist"
 fi
 
+echo "==> Ensuring claude CLI is installed globally..."
+if ! command -v claude &>/dev/null; then
+  sudo npm install -g @anthropic-ai/claude-code 2>&1
+fi
+
 echo "==> Ensuring gws CLI is installed globally..."
 if ! command -v gws &>/dev/null; then
   npm install -g @googleworkspace/cli 2>&1
