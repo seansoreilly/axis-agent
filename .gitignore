@@ -9,6 +9,9 @@ google-credentials.json
 google-token.json
 *.json.bak
 __pycache__/
+logs/
+tmp/
+.playwright-mcp/
 *.pem
 *.key
 nanobanana-output/

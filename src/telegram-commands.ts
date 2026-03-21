@@ -1,21 +1,9 @@
-import type TelegramBot from "node-telegram-bot-api";
-import type { Agent } from "./agent.js";
-import type { SqliteStore } from "./persistence.js";
-import type { Scheduler } from "./scheduler.js";
-
-export interface TelegramCommandContext {
-  bot: TelegramBot;
-  store: SqliteStore;
-  scheduler?: Scheduler;
-  agent: Agent;
-}
-
-export interface TelegramCommandHandler {
+interface TelegramCommand {
   name: string;
   description: string;
 }
 
-export const TELEGRAM_COMMANDS: TelegramCommandHandler[] = [
+export const TELEGRAM_COMMANDS: TelegramCommand[] = [
   { name: "/new", description: "Start fresh session" },
   { name: "/cancel", description: "Cancel current request" },
   { name: "/retry", description: "Re-run last prompt" },
