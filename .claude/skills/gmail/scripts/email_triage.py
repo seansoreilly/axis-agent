@@ -180,6 +180,15 @@ def extract_event_date(email_data: Dict[str, Any]) -> Optional[datetime]:
             except (ValueError, AttributeError):
                 pass
 
+    # Fallback: check for a past year in the subject (e.g., "2025 Christmas BBQ")
+    year_match = re.search(r'\b(20\d{2})\b', subject)
+    if year_match:
+        year = int(year_match.group(1))
+        now = datetime.now()
+        if year < now.year:
+            # Event year is in the past — return Dec 31 of that year as a proxy date
+            return datetime(year, 12, 31)
+
     return None
 
 
