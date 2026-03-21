@@ -270,7 +270,7 @@ describe("PersistentProcess", () => {
     );
   });
 
-  it("sendPrompt rejects if process not ready", async () => {
+  it("sendPrompt works in starting state (first message triggers init)", async () => {
     const { PersistentProcess } = await import("./persistent-process.js");
 
     const proc = new PersistentProcess({
@@ -279,8 +279,21 @@ describe("PersistentProcess", () => {
       maxBudgetUsd: 5,
     });
 
-    // Don't emit init — still in 'starting' state
-    await expect(proc.sendPrompt("hello")).rejects.toThrow();
+    expect(proc.state).toBe("starting");
+
+    // sendPrompt should NOT reject — it sends the prompt which triggers init
+    const resultPromise = proc.sendPrompt("hello");
+    await flush();
+
+    // Init arrives (triggered by the prompt)
+    emitInit(mockProc);
+    await flush();
+
+    // Then result arrives
+    emitResult(mockProc, { text: "hi back" });
+    const result = await resultPromise;
+    expect(result.text).toBe("hi back");
+    expect(proc.state).toBe("ready");
   });
 
   it("sendPrompt rejects if already busy", async () => {
@@ -439,7 +452,8 @@ describe("ProcessManager", () => {
 
     const proc = await manager.getOrCreate(123);
     expect(proc).toBeDefined();
-    expect(proc.state).toBe("ready");
+    // Process starts in "starting" — becomes "ready" after first prompt triggers init
+    expect(proc.state).toBe("starting");
     expect(spawn).toHaveBeenCalled();
   });
 
@@ -489,7 +503,6 @@ describe("ProcessManager", () => {
     const proc1 = await manager.getOrCreate(123);
     // Simulate death
     proc1.kill();
-    await flush();
 
     const proc2 = await manager.getOrCreate(123);
     expect(proc2).not.toBe(proc1);
@@ -506,7 +519,7 @@ describe("ProcessManager", () => {
     });
 
     const proc = await manager.getOrCreate(123);
-    expect(proc.state).toBe("ready");
+    expect(proc.state).toBe("starting");
 
     manager.reset(123);
     expect(proc.state).toBe("dead");

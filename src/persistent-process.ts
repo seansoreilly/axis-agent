@@ -162,15 +162,13 @@ export class PersistentProcess {
    * Writes a JSON line to stdin, collects stream-json events until result.
    */
   async sendPrompt(prompt: string, opts?: SendPromptOpts): Promise<PromptResult> {
-    if (this._state === "starting") {
-      throw new Error("Process not ready yet — still starting");
-    }
     if (this._state === "dead") {
       throw new Error("Process is dead");
     }
     if (this._state === "busy") {
       throw new Error("Process is busy — already handling a prompt");
     }
+    // "starting" is allowed — the first prompt triggers the init event
 
     // If a self-review is in progress, interrupt it first
     if (this._inReview) {
@@ -489,20 +487,8 @@ export class ProcessManager {
     this.processes.set(userId, proc);
     this.lastActivity.set(userId, Date.now());
 
-    // Timeout on startup — if MCP servers hang, don't block forever
-    const startupTimeoutMs = 60_000;
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Process startup timed out (MCP connection hang?)")), startupTimeoutMs)
-    );
-
-    try {
-      await Promise.race([proc.ready, timeoutPromise]);
-    } catch (err) {
-      proc.kill();
-      this.processes.delete(userId);
-      throw err;
-    }
-
+    // Don't await proc.ready — the CLI only emits init after receiving
+    // the first message. sendPrompt handles both starting and ready states.
     return proc;
   }
 
