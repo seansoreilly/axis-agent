@@ -203,6 +203,7 @@ export class Agent {
       systemPrompt: this.contextBuilder.buildDynamicContext(),
       allowedTools: this.allowedTools,
       agents: this.agents,
+      selfReview: true,
     });
   }
 

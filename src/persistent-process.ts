@@ -13,6 +13,8 @@ export interface PersistentProcessOpts {
   allowedTools?: string[];
   agents?: Record<string, unknown>;
   onActivity?: (event: ActivityEvent) => void;
+  selfReview?: boolean;
+  selfReviewCooldownMs?: number;
 }
 
 export interface SendPromptOpts {
@@ -67,11 +69,17 @@ export class PersistentProcess {
   private readyResolve?: () => void;
   private readyReject?: (err: Error) => void;
   private onActivity?: (event: ActivityEvent) => void;
+  private selfReview: boolean;
+  private selfReviewCooldownMs: number;
+  private lastReviewMs = 0;
+  private _inReview = false;
   readonly ready: Promise<void>;
 
   constructor(opts: PersistentProcessOpts) {
     this._model = opts.model;
     this.onActivity = opts.onActivity;
+    this.selfReview = opts.selfReview ?? false;
+    this.selfReviewCooldownMs = opts.selfReviewCooldownMs ?? 10 * 60 * 1000; // 10 min default
 
     const args: string[] = [
       "-p",
@@ -151,6 +159,13 @@ export class PersistentProcess {
     }
     if (this._state === "busy") {
       throw new Error("Process is busy — already handling a prompt");
+    }
+
+    // If a self-review is in progress, interrupt it first
+    if (this._inReview) {
+      this.interrupt();
+      this._inReview = false;
+      await new Promise((r) => setTimeout(r, 50));
     }
 
     this._state = "busy";
@@ -257,6 +272,10 @@ export class PersistentProcess {
     this._state = "dead";
   }
 
+  private canSelfReview(): boolean {
+    return Date.now() - this.lastReviewMs >= this.selfReviewCooldownMs;
+  }
+
   private handleStdout(data: string): void {
     this.buffer += data;
     const lines = this.buffer.split("\n");
@@ -298,6 +317,12 @@ export class PersistentProcess {
 
     // Result event — response complete
     if (msg.type === "result") {
+      // Silently consume self-review results
+      if (this._inReview) {
+        this._inReview = false;
+        return;
+      }
+
       const sessionId = msg.session_id ?? this._sessionId;
       if (sessionId) this._sessionId = sessionId;
 
@@ -321,6 +346,23 @@ export class PersistentProcess {
         isTimeout: false,
       });
       this.currentResolve = undefined;
+
+      // Fire self-review after successful task (fire-and-forget)
+      if (this.selfReview && !isError && this.canSelfReview()) {
+        this.lastReviewMs = Date.now();
+        queueMicrotask(() => {
+          if (this._state !== "ready") return;
+          this._inReview = true;
+          const reviewMsg = JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: "[self-review] Briefly review the task you just completed. If you identify a concrete improvement to your process, tools, skills, or workspace files (SOUL.md, scripts, skills) — make the change now. If nothing to improve, just say 'No improvements needed.' Keep this under 30 seconds.",
+            },
+          });
+          this.proc.stdin?.write(reviewMsg + "\n");
+        });
+      }
     }
   }
 
@@ -357,6 +399,7 @@ export interface ProcessManagerOpts {
   allowedTools?: string[];
   agents?: Record<string, unknown>;
   idleTimeoutMs?: number;
+  selfReview?: boolean;
 }
 
 /**
@@ -410,6 +453,7 @@ export class ProcessManager {
       allowedTools: this.opts.allowedTools,
       agents: this.opts.agents,
       onActivity,
+      selfReview: this.opts.selfReview,
     });
 
     this.processes.set(userId, proc);

@@ -670,6 +670,148 @@ describe("PersistentProcess activity events", () => {
   });
 });
 
+describe("Self-review after task", () => {
+  let mockProc: ReturnType<typeof mockChildProcess>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockProc = mockChildProcess();
+    const { spawn } = await import("node:child_process");
+    (spawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProc);
+  });
+
+  it("sends self-review prompt after successful task when enabled", async () => {
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+      selfReview: true,
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const writeSpy = vi.spyOn(mockProc.stdin, "write");
+
+    // First prompt
+    const p1 = proc.sendPrompt("do something");
+    await flush();
+    emitResult(mockProc, { text: "done", durationMs: 5000 });
+    await p1;
+
+    // After result, a self-review prompt should be queued
+    // Give the fire-and-forget a tick to execute
+    await flush();
+
+    // Check that a review prompt was written to stdin
+    const reviewCall = writeSpy.mock.calls.find((c) =>
+      String(c[0]).includes("self-review")
+    );
+    expect(reviewCall).toBeTruthy();
+  });
+
+  it("does not send self-review when disabled", async () => {
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+      // selfReview not set — defaults to false
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const writeSpy = vi.spyOn(mockProc.stdin, "write");
+
+    const p1 = proc.sendPrompt("do something");
+    await flush();
+    emitResult(mockProc, { text: "done" });
+    await p1;
+    await flush();
+
+    const reviewCall = writeSpy.mock.calls.find((c) =>
+      String(c[0]).includes("self-review")
+    );
+    expect(reviewCall).toBeUndefined();
+  });
+
+  it("does not send self-review after error", async () => {
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+      selfReview: true,
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const writeSpy = vi.spyOn(mockProc.stdin, "write");
+
+    const p1 = proc.sendPrompt("do something");
+    await flush();
+    emitResult(mockProc, { text: "error occurred", isError: true });
+    await p1;
+    await flush();
+
+    const reviewCall = writeSpy.mock.calls.find((c) =>
+      String(c[0]).includes("self-review")
+    );
+    expect(reviewCall).toBeUndefined();
+  });
+
+  it("throttles self-review to once per cooldown period", async () => {
+    const { PersistentProcess } = await import("./persistent-process.js");
+
+    const proc = new PersistentProcess({
+      model: "claude-sonnet-4-6",
+      workDir: "/tmp/test",
+      maxBudgetUsd: 5,
+      selfReview: true,
+      selfReviewCooldownMs: 60_000,
+    });
+
+    emitInit(mockProc);
+    await proc.ready;
+
+    const writeSpy = vi.spyOn(mockProc.stdin, "write");
+
+    // First task — should trigger review
+    const p1 = proc.sendPrompt("task 1");
+    await flush();
+    emitResult(mockProc, { text: "done 1" });
+    await p1;
+    await flush();
+
+    // Consume the review result
+    emitResult(mockProc, { text: "review done" });
+    await flush();
+
+    const reviewCount1 = writeSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("self-review")
+    ).length;
+    expect(reviewCount1).toBe(1);
+
+    // Second task immediately after — should NOT trigger review (cooldown)
+    const p2 = proc.sendPrompt("task 2");
+    await flush();
+    emitResult(mockProc, { text: "done 2" });
+    await p2;
+    await flush();
+
+    const reviewCount2 = writeSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("self-review")
+    ).length;
+    expect(reviewCount2).toBe(1); // still 1, not 2
+  });
+});
+
 describe("Long-running orchestrator", () => {
   let mockProc: ReturnType<typeof mockChildProcess>;
 
