@@ -48,6 +48,7 @@ function makeMemory() {
   return {
     recordSession: vi.fn(),
     getLastSession: vi.fn().mockReturnValue(undefined),
+    getRecentSession: vi.fn().mockReturnValue(undefined),
   };
 }
 

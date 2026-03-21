@@ -318,8 +318,8 @@ export class TelegramIntegration {
     const progress = this.progressReporter.start(chatId, startTime);
 
     try {
-      // In-memory session map is the single source of truth for resumption
-      const sessionId = this.userSessions.get(userId);
+      // Use in-memory session if available, otherwise restore from SQLite (survives restarts)
+      const sessionId = this.userSessions.get(userId) ?? this.store.getRecentSession(userId)?.sessionId;
 
       const model = state.modelOverride;
       let result = await this.agent.run(text, {
