@@ -302,7 +302,7 @@ describe("Contract: gateway response shapes", () => {
       method: "POST",
       url: "/owntracks",
       headers: { authorization: "Bearer ot-secret" },
-      payload: { _type: "location", lat: -37.81, lon: 144.96, tst: 1700000000 },
+      payload: { _type: "location", lat: -37.81, lon: 144.96, tst: Math.floor(Date.now() / 1000) },
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toEqual([]);
