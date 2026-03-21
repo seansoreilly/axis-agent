@@ -259,7 +259,7 @@ export class Agent {
       };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      if (/dead|crash|exited/i.test(msg)) {
+      if (/dead|crash|exited|timed out|startup/i.test(msg)) {
         info("agent", `Persistent process failed for user ${userId}, falling back to one-shot: ${msg}`);
         this.processManager.reset(userId);
         return this.runOneShot(prompt, model, timeoutMs, undefined, signal);
