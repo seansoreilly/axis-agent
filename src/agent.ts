@@ -244,8 +244,11 @@ export class Agent {
     onActivity?: (event: { tool?: string; text?: string }) => void,
   ): Promise<AgentResult> {
     try {
+      info("agent", `Using persistent process for user ${userId} (model: ${model})`);
       const proc = await this.processManager.getOrCreate(userId, model, onActivity);
+      info("agent", `Persistent process ready for user ${userId} (session: ${proc.sessionId})`);
       const result = await proc.sendPrompt(prompt, { timeoutMs, signal, maxRunMs: 5 * 60 * 1000 });
+      info("agent", `Persistent process completed for user ${userId} (${result.durationMs}ms, error: ${result.isError})`);
       return {
         text: result.text,
         sessionId: result.sessionId,

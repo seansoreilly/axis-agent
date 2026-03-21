@@ -194,9 +194,27 @@ export class PersistentProcess {
 
       // Set up maxRunMs auto-interrupt (orchestrator watchdog)
       let maxRunId: ReturnType<typeof setTimeout> | undefined;
+      let maxRunKillId: ReturnType<typeof setTimeout> | undefined;
       if (opts?.maxRunMs) {
         maxRunId = setTimeout(() => {
+          info("persistent-process", `maxRunMs (${opts.maxRunMs}ms) exceeded — sending interrupt`);
           this.interrupt();
+          // If still running 30s after interrupt, force kill
+          maxRunKillId = setTimeout(() => {
+            if (this._state === "busy") {
+              info("persistent-process", "Process did not stop after interrupt — killing");
+              this.kill();
+              resolve({
+                text: "Task exceeded the maximum run time and was stopped. Try breaking it into smaller steps.",
+                sessionId: this._sessionId,
+                durationMs: opts.maxRunMs! + 30_000,
+                totalCostUsd: 0,
+                isError: true,
+                isTimeout: true,
+              });
+              this.currentResolve = undefined;
+            }
+          }, 30_000);
         }, opts.maxRunMs);
       }
 
@@ -226,6 +244,7 @@ export class PersistentProcess {
       this.currentResolve = (result: PromptResult) => {
         if (timeoutId) clearTimeout(timeoutId);
         if (maxRunId) clearTimeout(maxRunId);
+        if (maxRunKillId) clearTimeout(maxRunKillId);
         opts?.signal?.removeEventListener("abort", onAbort);
         originalResolve?.(result);
       };
