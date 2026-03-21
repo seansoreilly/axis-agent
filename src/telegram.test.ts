@@ -4,6 +4,11 @@ import type { AgentResult } from "./agent.js";
 // Shared mock bot instance — captured when TelegramBot constructor is called
 let mockBotInstance: Record<string, ReturnType<typeof vi.fn>>;
 
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, writeFileSync: vi.fn(), unlinkSync: vi.fn() };
+});
+
 vi.mock("node-telegram-bot-api", () => {
   return {
     default: vi.fn().mockImplementation(function () {
@@ -64,14 +69,18 @@ type Handler = (msg: any) => void;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CallbackHandler = (query: any) => void;
 
-async function createBot(agent?: ReturnType<typeof makeAgent>) {
+async function createBot(
+  agent?: ReturnType<typeof makeAgent>,
+  opts?: { allowedUsers?: number[] }
+) {
   const { TelegramIntegration } = await import("./telegram.js");
 
   const a = agent ?? makeAgent();
   const m = makeMemory();
   const s = makeScheduler();
+  const users = opts?.allowedUsers ?? [123];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bot = new TelegramIntegration("token", [123], a as any, m as any, "/tmp/test-workdir", s as any);
+  const bot = new TelegramIntegration("token", users, a as any, m as any, "/tmp/test-workdir", s as any);
   bot.start();
 
   const handler = mockBotInstance.on.mock.calls.find(
@@ -916,6 +925,241 @@ describe("TelegramIntegration", () => {
       String(c[1]).includes("Connection error")
     );
     expect(connMsg).toBeTruthy();
+  });
+
+  describe("session continuity", () => {
+    it("second message resumes session from first", async () => {
+      const agent = makeAgent();
+      const { handler } = await createBot(agent);
+
+      handler(makeMsg("hello"));
+      await flush();
+      handler(makeMsg("follow up"));
+      await flush();
+
+      expect(agent.run).toHaveBeenCalledTimes(2);
+      expect(agent.run.mock.calls[0][1]).toMatchObject({ sessionId: undefined });
+      expect(agent.run.mock.calls[1][1]).toMatchObject({ sessionId: "sess-1" });
+    });
+
+    it("session persists through 3 consecutive messages", async () => {
+      const agent = makeAgent();
+      const { handler } = await createBot(agent);
+
+      handler(makeMsg("one"));
+      await flush();
+      handler(makeMsg("two"));
+      await flush();
+      handler(makeMsg("three"));
+      await flush();
+
+      expect(agent.run).toHaveBeenCalledTimes(3);
+      expect(agent.run.mock.calls[0][1]).toMatchObject({ sessionId: undefined });
+      expect(agent.run.mock.calls[1][1]).toMatchObject({ sessionId: "sess-1" });
+      expect(agent.run.mock.calls[2][1]).toMatchObject({ sessionId: "sess-1" });
+    });
+
+    it("concurrent users get isolated sessions", async () => {
+      const base: AgentResult = { text: "ok", durationMs: 50, totalCostUsd: 0.01, isError: false };
+      const agent = makeAgent();
+      agent.run
+        .mockResolvedValueOnce({ ...base, sessionId: "sess-A" })  // user 123 msg 1
+        .mockResolvedValueOnce({ ...base, sessionId: "sess-B" })  // user 789 msg 1
+        .mockResolvedValue({ ...base, sessionId: "sess-follow" }); // subsequent
+
+      const { handler } = await createBot(agent, { allowedUsers: [123, 789] });
+
+      handler(makeMsg("hello from A", 123));
+      await flush();
+      handler(makeMsg("hello from B", 789));
+      await flush();
+      handler(makeMsg("follow from A", 123));
+      await flush();
+      handler(makeMsg("follow from B", 789));
+      await flush();
+
+      expect(agent.run).toHaveBeenCalledTimes(4);
+      // User A's second message resumes sess-A
+      expect(agent.run.mock.calls[2][1]).toMatchObject({ sessionId: "sess-A", userId: 123 });
+      // User B's second message resumes sess-B
+      expect(agent.run.mock.calls[3][1]).toMatchObject({ sessionId: "sess-B", userId: 789 });
+    });
+
+    it("after stale session recovery, next message uses new sessionId", async () => {
+      const base: AgentResult = { text: "ok", durationMs: 50, totalCostUsd: 0.01, isError: false };
+      const agent = makeAgent();
+      agent.run
+        .mockResolvedValueOnce({ ...base, sessionId: "old-sess" })          // msg 1: establishes old-sess
+        .mockResolvedValueOnce({ ...base, sessionId: "", isError: true })    // msg 2: stale error
+        .mockResolvedValueOnce({ ...base, sessionId: "new-sess" })          // msg 2 retry: establishes new-sess
+        .mockResolvedValue({ ...base, sessionId: "new-sess" });             // msg 3
+
+      const { handler } = await createBot(agent);
+
+      handler(makeMsg("first"));
+      await flush();
+      handler(makeMsg("stale"));
+      await flush();
+      handler(makeMsg("after recovery"));
+      await flush();
+
+      // msg 3 (call index 3) should use new-sess
+      expect(agent.run.mock.calls[3][1]).toMatchObject({ sessionId: "new-sess" });
+    });
+  });
+
+  describe("media handling", () => {
+    it("photo message downloads image and includes path in prompt", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        text: () => Promise.resolve(""),
+      }));
+
+      const agent = makeAgent();
+      const { handler } = await createBot(agent);
+
+      handler({
+        chat: { id: 456 },
+        from: { id: 123 },
+        photo: [
+          { file_id: "small", width: 100, height: 100 },
+          { file_id: "large", width: 800, height: 600 },
+        ],
+      });
+      await flush();
+
+      vi.unstubAllGlobals();
+
+      expect(agent.run).toHaveBeenCalledTimes(1);
+      const prompt = agent.run.mock.calls[0][0] as string;
+      expect(prompt).toContain("[Photo uploaded: /tmp/telegram_photo_");
+      expect(prompt).toContain("Use the Read tool to view it");
+    });
+
+    it("voice message includes path and duration in prompt", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        text: () => Promise.resolve(""),
+      }));
+
+      const agent = makeAgent();
+      const { handler } = await createBot(agent);
+
+      handler({
+        chat: { id: 456 },
+        from: { id: 123 },
+        voice: { file_id: "voice-1", duration: 12 },
+      });
+      await flush();
+
+      vi.unstubAllGlobals();
+
+      const prompt = agent.run.mock.calls[0][0] as string;
+      expect(prompt).toContain("[Voice message: /tmp/telegram_voice_");
+      expect(prompt).toContain("duration: 12s");
+    });
+
+    it("document message downloads text and prepends to prompt", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        text: () => Promise.resolve("file content here"),
+      }));
+
+      const agent = makeAgent();
+      const { handler } = await createBot(agent);
+
+      handler({
+        chat: { id: 456 },
+        from: { id: 123 },
+        document: { file_id: "doc-1", file_name: "notes.txt" },
+        caption: "check this file",
+      });
+      await flush();
+
+      vi.unstubAllGlobals();
+
+      const prompt = agent.run.mock.calls[0][0] as string;
+      expect(prompt).toContain("[File: notes.txt]");
+      expect(prompt).toContain("file content here");
+      expect(prompt).toContain("check this file");
+    });
+  });
+
+  describe("policy enforcement", () => {
+    it("message containing blocked command pattern reaches agent (soft enforcement)", async () => {
+      const agent = makeAgent();
+      const { handler } = await createBot(agent);
+
+      handler(makeMsg("please run rm -rf / on the server"));
+      await flush();
+
+      // Telegram doesn't hard-block; policies are injected via system prompt
+      expect(agent.run).toHaveBeenCalledTimes(1);
+      expect(agent.run.mock.calls[0][0]).toContain("rm -rf /");
+    });
+  });
+
+  describe("inline keyboard and callbacks", () => {
+    it("response includes retry and new_session buttons with correct callback_data", async () => {
+      const agent = makeAgent();
+      const { handler, botInstance } = await createBot(agent);
+
+      handler(makeMsg("hello"));
+      await flush();
+
+      const call = botInstance.sendMessage.mock.calls.find(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (c: any[]) => c[2]?.reply_markup?.inline_keyboard
+      );
+      expect(call).toBeTruthy();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const keyboard = (call as any[])[2].reply_markup.inline_keyboard as Array<Array<{ text: string; callback_data: string }>>;
+      expect(keyboard[0][0]).toEqual({ text: "Retry", callback_data: "retry" });
+      expect(keyboard[0][1]).toEqual({ text: "New session", callback_data: "new_session" });
+    });
+
+    it("/model with no args shows keyboard with all model options", async () => {
+      const agent = makeAgent();
+      const { handler, botInstance } = await createBot(agent);
+
+      handler(makeMsg("/model"));
+      await flush();
+
+      const call = botInstance.sendMessage.mock.calls.find(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (c: any[]) => c[2]?.reply_markup?.inline_keyboard
+      );
+      expect(call).toBeTruthy();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const keyboard = (call as any[])[2].reply_markup.inline_keyboard as Array<Array<{ text: string; callback_data: string }>>;
+      const allButtons = keyboard.flat();
+      const callbackData = allButtons.map(b => b.callback_data);
+      expect(callbackData).toContain("model:opus");
+      expect(callbackData).toContain("model:sonnet");
+      expect(callbackData).toContain("model:haiku");
+      expect(callbackData).toContain("model:default");
+    });
+
+    it("unknown callback_query data is handled without crash", async () => {
+      const agent = makeAgent();
+      const { botInstance, callbackHandler } = await createBot(agent);
+
+      callbackHandler({
+        id: "cb-unknown",
+        from: { id: 123 },
+        message: { chat: { id: 456 } },
+        data: "unknown_action",
+      });
+      await flush();
+
+      expect(botInstance.answerCallbackQuery).toHaveBeenCalledWith("cb-unknown");
+      // No error message sent for unknown actions
+      const errorMsg = botInstance.sendMessage.mock.calls.find(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (c: any[]) => String(c[1]).toLowerCase().includes("error") || String(c[1]).toLowerCase().includes("unknown")
+      );
+      expect(errorMsg).toBeUndefined();
+    });
   });
 
 });

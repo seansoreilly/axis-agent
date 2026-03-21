@@ -383,6 +383,56 @@ describe("Gateway", () => {
     expect(response.statusCode).toBe(404);
   });
 
+  it("webhook sync response includes sessionId from agent result", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/webhook",
+      headers: authHeader(),
+      payload: { prompt: "hello" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.sessionId).toBe("sess-1");
+  });
+
+  it("webhook without sessionId passes undefined to agent.run", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/webhook",
+      headers: authHeader(),
+      payload: { prompt: "no session here" },
+    });
+
+    expect(agent.run).toHaveBeenCalledWith("no session here", { sessionId: undefined });
+  });
+
   it("includes security headers from helmet", async () => {
     const { createGateway } = await import("./gateway.js");
     const agent = makeAgent();

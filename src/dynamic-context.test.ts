@@ -3,6 +3,17 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+describe("Policies", () => {
+  it("buildPolicyPromptSection includes blocked commands and sensitive files", async () => {
+    const { buildPolicyPromptSection } = await import("./policies.js");
+    const section = buildPolicyPromptSection();
+    expect(section).toContain("rm -rf");
+    expect(section).toContain("shutdown");
+    expect(section).toContain(".env");
+    expect(section).toContain("REFUSE");
+  });
+});
+
 describe("DynamicContextBuilder", () => {
   it("includes scheduled tasks in dynamic context", async () => {
     const { DynamicContextBuilder } = await import("./dynamic-context.js");
