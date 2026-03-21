@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Fastify from "fastify";
 import helmet from "@fastify/helmet";
@@ -270,6 +270,12 @@ export async function createGateway(
         return reply.status(400).send([]);
       }
 
+      // Reject timestamps too far in the future (>5 min) or too stale (>24h)
+      const nowSecs = Date.now() / 1000;
+      if (body.tst > nowSecs + 300 || body.tst < nowSecs - 86400) {
+        return reply.status(400).send([]);
+      }
+
       const utcTimestamp = new Date(body.tst * 1000);
       const location = {
         lat: body.lat,
@@ -284,7 +290,10 @@ export async function createGateway(
         receivedAt: new Date().toISOString(),
       };
 
-      writeFileSync(join(opts.workDir!, "current-location.json"), JSON.stringify(location));
+      const finalPath = join(opts.workDir!, "current-location.json");
+      const tmpPath = finalPath + ".tmp";
+      writeFileSync(tmpPath, JSON.stringify(location));
+      renameSync(tmpPath, finalPath);
       info("gateway", `Location updated: ${body.lat},${body.lon} (acc: ${body.acc ?? "?"}m)`);
       metrics.increment("gateway.owntracks.updates");
 

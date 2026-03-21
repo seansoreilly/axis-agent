@@ -1,5 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
-import { unlinkSync, writeFileSync } from "node:fs";
+import { renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Agent, AgentResult } from "./agent.js";
 import type { SqliteStore } from "./persistence.js";
@@ -521,7 +521,10 @@ export class TelegramIntegration {
       at: utcDate.toISOString(),
       localTime: utcDate.toLocaleString("en-AU", { timeZone: "Australia/Melbourne", dateStyle: "medium", timeStyle: "short" }),
     });
-    writeFileSync(join(this.workDir, "current-location.json"), value);
+    const finalPath = join(this.workDir, "current-location.json");
+    const tmpPath = finalPath + ".tmp";
+    writeFileSync(tmpPath, value);
+    renameSync(tmpPath, finalPath);
   }
 
   private async handleCommand(

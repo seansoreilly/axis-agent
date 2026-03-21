@@ -27,12 +27,18 @@ function makeScheduler() {
 }
 
 let capturedWritePath: string | null = null;
+let capturedWriteData: string | null = null;
+let capturedRenamePaths: { from: string; to: string } | null = null;
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
     ...actual,
-    writeFileSync: vi.fn().mockImplementation((path: string) => {
+    writeFileSync: vi.fn().mockImplementation((path: string, data: string) => {
       capturedWritePath = path;
+      capturedWriteData = data;
+    }),
+    renameSync: vi.fn().mockImplementation((from: string, to: string) => {
+      capturedRenamePaths = { from, to };
     }),
   };
 });
@@ -47,6 +53,9 @@ describe("Gateway", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedWritePath = null;
+    capturedWriteData = null;
+    capturedRenamePaths = null;
     tmpDir = join(tmpdir(), `gateway-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
   });
@@ -142,7 +151,7 @@ describe("Gateway", () => {
       method: "POST",
       url: "/owntracks",
       headers: { authorization: "Bearer secret" },
-      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: 1760000000 },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: Math.floor(Date.now() / 1000) },
     });
 
     expect(response.statusCode).toBe(200);
@@ -528,6 +537,259 @@ describe("Gateway", () => {
       payload: { _type: "waypoint", desc: "home" },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  // --- OwnTracks: Basic auth coverage ---
+
+  it("accepts owntracks updates with HTTP Basic auth (iOS)", async () => {
+    capturedWritePath = null;
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const basicAuth = Buffer.from("iosuser:secret").toString("base64");
+    const response = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: `Basic ${basicAuth}` },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: Math.floor(Date.now() / 1000) },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedWritePath).toContain("current-location.json");
+  });
+
+  it("rejects owntracks with wrong Basic auth password", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const basicAuth = Buffer.from("user:wrong-password").toString("base64");
+    const response = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: `Basic ${basicAuth}` },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: Math.floor(Date.now() / 1000) },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("handles Basic auth with colons in password", async () => {
+    capturedWritePath = null;
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "pass:with:colons",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const basicAuth = Buffer.from("user:pass:with:colons").toString("base64");
+    const response = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: `Basic ${basicAuth}` },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: Math.floor(Date.now() / 1000) },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedWritePath).toContain("current-location.json");
+  });
+
+  it("rejects owntracks with no auth header", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: Math.floor(Date.now() / 1000) },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  // --- OwnTracks: Timestamp validation ---
+
+  it("rejects owntracks location with timestamp too far in the future", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const futureTs = Math.floor(Date.now() / 1000) + 3600; // 1 hour in the future
+    const response = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: "Bearer secret" },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: futureTs },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("accepts owntracks location with recent timestamp (within 24h)", async () => {
+    capturedWritePath = null;
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const recentTs = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+    const response = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: "Bearer secret" },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: recentTs },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedWritePath).toContain("current-location.json");
+  });
+
+  it("rejects owntracks location with very stale timestamp (>24h old)", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const staleTs = Math.floor(Date.now() / 1000) - (48 * 3600); // 48 hours ago
+    const response = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: "Bearer secret" },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: staleTs },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  // --- OwnTracks: Atomic file writes ---
+
+  it("writes location file atomically (write-then-rename)", async () => {
+    capturedRenamePaths = null;
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: "Bearer secret" },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst: Math.floor(Date.now() / 1000) },
+    });
+
+    expect(capturedWritePath).toContain(".tmp");
+    expect(capturedRenamePaths).not.toBeNull();
+    expect(capturedRenamePaths!.from).toContain(".tmp");
+    expect(capturedRenamePaths!.to).toContain("current-location.json");
+    expect(capturedRenamePaths!.to).not.toContain(".tmp");
+  });
+
+  // --- OwnTracks: Data shape validation ---
+
+  it("writes correct location data shape to file", async () => {
+    capturedWriteData = null;
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      agent: agent as any,
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const tst = Math.floor(Date.now() / 1000);
+    await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: "Bearer secret" },
+      payload: { _type: "location", lat: -33.86, lon: 151.2, tst, acc: 5, alt: 42, vel: 10, batt: 85, conn: "w" },
+    });
+
+    expect(capturedWriteData).not.toBeNull();
+    const data = JSON.parse(capturedWriteData!);
+    expect(data.lat).toBe(-33.86);
+    expect(data.lon).toBe(151.2);
+    expect(data.accuracy).toBe(5);
+    expect(data.altitude).toBe(42);
+    expect(data.velocity).toBe(10);
+    expect(data.battery).toBe(85);
+    expect(data.connection).toBe("w");
+    expect(data.timestamp).toBe(new Date(tst * 1000).toISOString());
+    expect(typeof data.receivedAt).toBe("string");
+    expect(typeof data.localTime).toBe("string");
   });
 
   it("all protected routes return 401 without auth", async () => {
