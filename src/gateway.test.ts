@@ -450,4 +450,119 @@ describe("Gateway", () => {
     expect(health.headers["x-content-type-options"]).toBe("nosniff");
     expect(health.headers["x-frame-options"]).toBe("SAMEORIGIN");
   });
+
+  it("GET /admin/events returns events array with correct shape", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const { SqliteStore } = await import("./persistence.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+    const store = new SqliteStore(tmpDir);
+    store.addEvent("test-event", { detail: "value" });
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      store,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/admin/events", headers: authHeader() });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(Array.isArray(body.events)).toBe(true);
+    expect(body.events.length).toBeGreaterThanOrEqual(1);
+    const event = body.events[0];
+    expect(typeof event.id).toBe("number");
+    expect(typeof event.eventType).toBe("string");
+    expect(typeof event.details).toBe("object");
+    expect(typeof event.createdAt).toBe("string");
+  });
+
+  it("POST /tasks returns 400 when required fields are missing", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/tasks",
+      headers: authHeader(),
+      payload: { id: "t3" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toBeTruthy();
+  });
+
+  it("POST /owntracks returns 400 for non-location payloads", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      workDir: tmpDir,
+      owntracksToken: "secret",
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/owntracks",
+      headers: { authorization: "Bearer secret" },
+      payload: { _type: "waypoint", desc: "home" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("all protected routes return 401 without auth", async () => {
+    const { createGateway } = await import("./gateway.js");
+    const agent = makeAgent();
+    const scheduler = makeScheduler();
+
+    app = await createGateway({
+      port: 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      agent: agent as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scheduler: scheduler as any,
+      gatewayApiToken: TEST_TOKEN,
+    });
+
+    const protectedRoutes = [
+      { method: "POST" as const, url: "/webhook", payload: { prompt: "test" } },
+      { method: "GET" as const, url: "/tasks" },
+      { method: "POST" as const, url: "/tasks", payload: { id: "x", name: "x", schedule: "* * * * *", prompt: "x" } },
+      { method: "DELETE" as const, url: "/tasks/x" },
+      { method: "POST" as const, url: "/tasks/x/run" },
+      { method: "GET" as const, url: "/admin/status" },
+      { method: "GET" as const, url: "/admin/jobs" },
+      { method: "GET" as const, url: "/admin/events" },
+      { method: "GET" as const, url: "/admin/metrics" },
+    ];
+
+    for (const route of protectedRoutes) {
+      const res = await app.inject({
+        method: route.method,
+        url: route.url,
+        payload: "payload" in route ? route.payload : undefined,
+      });
+      expect(res.statusCode, `expected 401 for ${route.method} ${route.url}`).toBe(401);
+    }
+  });
 });
