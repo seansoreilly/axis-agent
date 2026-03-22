@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { join } from "node:path";
 import type { Config } from "./config.js";
 import type { SqliteStore } from "./persistence.js";
 import { error as logError, info, createLogger } from "./logger.js";
@@ -200,7 +201,8 @@ export class Agent {
     store: SqliteStore,
     identity?: import("./identity.js").IdentityManager,
   ) {
-    this.contextBuilder = new DynamicContextBuilder(store, identity);
+    const reflectionStorePath = join(config.memoryDir, "reflections.jsonl");
+    this.contextBuilder = new DynamicContextBuilder(store, identity, config.claude.workDir, reflectionStorePath);
     // ProcessManager created lazily after async identity context is loaded
     this.initPromise = this.contextBuilder.buildDynamicContext().then((ctx) => {
       this.processManager = new ProcessManager({

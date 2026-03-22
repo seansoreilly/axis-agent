@@ -6,6 +6,7 @@ import type { SqliteStore } from "./persistence.js";
 import type { Scheduler } from "./scheduler.js";
 import type { VoiceService } from "./voice.js";
 import type { TranscriptLogger } from "./transcript.js";
+import type { ReflectionService } from "./reflection.js";
 import { info, error as logError } from "./logger.js";
 import { TelegramMediaService } from "./telegram-media.js";
 import { TelegramProgressReporter } from "./telegram-progress.js";
@@ -68,6 +69,7 @@ export class TelegramIntegration {
   private scheduler?: Scheduler;
   private voiceService?: VoiceService;
   private transcriptLogger?: TranscriptLogger;
+  private reflection?: ReflectionService;
   private allowedUsers: Set<number>;
   private userSessions: Map<number, string> = new Map();
   private processingUsers: Set<number> = new Set();
@@ -85,6 +87,7 @@ export class TelegramIntegration {
     scheduler?: Scheduler,
     voiceService?: VoiceService,
     transcriptLogger?: TranscriptLogger,
+    reflection?: ReflectionService,
   ) {
     this.bot = new TelegramBot(botToken, { polling: true });
     this.botToken = botToken;
@@ -94,6 +97,7 @@ export class TelegramIntegration {
     this.scheduler = scheduler;
     this.voiceService = voiceService;
     this.transcriptLogger = transcriptLogger;
+    this.reflection = reflection;
     this.allowedUsers = new Set(allowedUsers);
     this.media = new TelegramMediaService(this.bot, botToken);
     this.progressReporter = new TelegramProgressReporter(
@@ -386,6 +390,21 @@ export class TelegramIntegration {
       state.totalCostUsd += result.totalCostUsd;
       state.requestCount++;
       metrics.increment("telegram.requests.completed");
+
+      // Post-task reflection (fire-and-forget)
+      if (this.reflection) {
+        this.reflection.maybeReflect({
+          taskPrompt: text,
+          taskResponse: result.text,
+          durationMs: result.durationMs,
+          costUsd: result.totalCostUsd,
+          isError: result.isError,
+          model: model ?? "unknown",
+        }).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          logError("telegram", `Reflection failed: ${msg}`);
+        });
+      }
 
       await progress.stop();
       await this.sendResponse(chatId, result.text, result);

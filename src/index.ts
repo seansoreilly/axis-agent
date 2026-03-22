@@ -12,6 +12,7 @@ import { metrics } from "./metrics.js";
 import { preflight } from "./preflight.js";
 import { IdentityManager } from "./identity.js";
 import { TranscriptLogger } from "./transcript.js";
+import { ReflectionService } from "./reflection.js";
 import type { VoiceService as VoiceServiceType } from "./voice.js";
 
 async function main(): Promise<void> {
@@ -40,6 +41,15 @@ async function main(): Promise<void> {
   const transcriptLogger = new TranscriptLogger(join(config.memoryDir, "transcripts"));
   const agent = new Agent(config, store, identity);
   const jobs = new JobService({ store, agent });
+
+  const reflectionStorePath = join(config.memoryDir, "reflections.jsonl");
+  const reflection = new ReflectionService({
+    reflectAgent: async (prompt: string) => {
+      const result = await agent.run(prompt, { timeoutMs: 30_000 });
+      return { text: result.text, isError: result.isError };
+    },
+    storePath: reflectionStorePath,
+  });
 
   // Set up scheduler with Telegram notifications (created before telegram so we can pass it)
   let telegram: TelegramIntegration;
@@ -107,6 +117,7 @@ async function main(): Promise<void> {
     scheduler,
     voiceService,
     transcriptLogger,
+    reflection,
   );
 
   // Start Telegram bot
