@@ -59,8 +59,10 @@ cat /home/ubuntu/workspace/current-location.json
 When the user asks to contact someone by name, look up their details first. Do NOT ask the user for a phone number or email.
 
 ```bash
-gws people people searchContacts --params '{"query":"<name>","readMask":"names,phoneNumbers,emailAddresses"}' 2>/dev/null
+gws people people searchContacts --params "{\"query\":\"<name>\",\"readMask\":\"names,phoneNumbers,emailAddresses\"}" 2>/dev/null
 ```
+
+Use double quotes for `--params` (not single quotes) so names with apostrophes like O'Reilly work correctly.
 
 Then proceed with the action:
 - **SMS:** `python3 /home/ubuntu/agent/.claude/skills/twilio/scripts/send_sms.py --to '<phone>' --body '<message>'`

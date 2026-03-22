@@ -61,7 +61,7 @@ export const DEFAULT_CORE_SECTIONS: PromptSection[] = [
     title: "Contact Lookup",
     lines: [
       "When you need someone's contact details, look them up using the gws CLI — do NOT use skill scripts, googleapis, or ask the user:",
-      "  gws people people searchContacts --params '{\"query\": \"<name>\", \"readMask\": \"names,emailAddresses,phoneNumbers\"}' 2>/dev/null",
+      '  gws people people searchContacts --params "{\\"query\\": \\"<name>\\", \\"readMask\\": \\"names,emailAddresses,phoneNumbers\\"}" 2>/dev/null',
       "You have skills installed in `.claude/skills/`. Run `ls .claude/skills/` to discover them, then read the SKILL.md for usage.",
     ],
   },
