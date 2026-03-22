@@ -60,7 +60,7 @@ function spawnClaude(args: string[], opts: {
     const proc = spawn("claude", args, {
       cwd: opts.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" },
     });
 
     const timeoutId = setTimeout(() => {
@@ -182,11 +182,15 @@ export class Agent {
       description: "Thorough research and analysis agent for tasks requiring investigation, comparison, multi-source research, synthesizing documents, technical analysis, and moderate coding tasks. Use when the main agent lacks the depth needed.",
       prompt: "You are a thorough research assistant. Investigate deeply, cross-reference sources, and provide well-structured findings.",
       model: "sonnet",
+      tools: "Read,Grep,Glob,Bash,WebSearch,WebFetch,mcp__*",
+      maxTurns: 15,
     },
     reasoning: {
       description: "Advanced reasoning agent for complex architecture decisions, nuanced creative writing, multi-step logical reasoning, holistic code review, and strategic planning. Use sparingly — only when the task genuinely requires deep thought.",
       prompt: "You are an advanced reasoning assistant. Think carefully and provide thorough, well-reasoned analysis.",
       model: "opus",
+      tools: "Read,Edit,Write,Grep,Glob,Bash,WebSearch,WebFetch,mcp__*",
+      maxTurns: 20,
     },
   };
   private readonly allowedTools = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch", "Task", "mcp__*"];

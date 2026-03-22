@@ -85,6 +85,7 @@ export class VoiceService {
           begin_message: greeting ?? "",
         },
         agent_override: {
+          agent: this.config.voiceId ? { voice_id: this.config.voiceId } : undefined,
           retell_llm: {
             model: "claude-4.6-sonnet",
             start_speaker: "user",
