@@ -105,9 +105,17 @@ Configured in `.mcp.json` (auto-loaded from cwd):
 - **Playwright** (`@playwright/mcp`) — headless Chromium browser automation.
 - **Context7** (`@upstash/context7-mcp`) — library documentation lookup.
 
-## Google Workspace CLI (`gws`)
+## Google Operations
 
-The `@googleworkspace/cli` package provides unified CLI for ALL Google APIs. **Only tool** for Google operations — not Composio.
+**Prefer MCP tools** (`mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Gmail__*`) for Calendar and Gmail — they support parallel queries, return structured JSON, and provide richer API access.
+
+**Fall back to `gws` CLI** for services without MCP support (Contacts, Drive, Sheets, Docs, Slides, Tasks, Chat, Forms, Keep, Meet) or quick one-off lookups.
+
+**Never use Composio** for Google operations.
+
+### `gws` CLI
+
+The `@googleworkspace/cli` package provides unified CLI for ALL Google APIs.
 
 **Auth:** OAuth at `~/.config/gws/credentials.json`. Do NOT set `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`. Append `2>/dev/null` to suppress harmless stderr warnings.
 

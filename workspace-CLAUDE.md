@@ -90,8 +90,9 @@ Use sub-agents via the Task tool when the task genuinely requires depth or paral
 
 When you need a new integration, evaluate options in priority order:
 
-1. **Google Workspace CLI (`gws`)** — ALL Google services (Gmail, Calendar, Contacts, Drive, Sheets, Docs). OAuth at `~/.config/gws/credentials.json`. Always append `2>/dev/null`.
-2. **MCP server** — config in `.mcp.json` (auto-loaded). Use Composio MCP (`mcp__composio__*`) for non-Google third-party integrations.
+1. **MCP Google Calendar/Gmail tools** — prefer for Calendar and Gmail operations (parallel queries, structured JSON, richer API). Never use Composio for Google.
+2. **Google Workspace CLI (`gws`)** — for Google services without MCP support (Contacts, Drive, Sheets, Docs, etc.). OAuth at `~/.config/gws/credentials.json`. Always append `2>/dev/null`.
+3. **MCP server** — config in `.mcp.json` (auto-loaded). Use Composio MCP (`mcp__composio__*`) for non-Google third-party integrations.
 3. **Community skill** — pre-built in `.claude/skills/`. Must support headless auth.
 4. **Custom skill** — hand-built in `.claude/skills/<name>/` with `SKILL.md`. Use `skill-generator` meta-skill as template.
 5. **One-off Bash** — for simple, non-recurring tasks.
