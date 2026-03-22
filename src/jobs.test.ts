@@ -2,6 +2,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { Agent, AgentResult } from "./agent.js";
+
+/** Minimal mock agent satisfying only the `run` method used by JobService. */
+type MockAgent = Pick<Agent, "run">;
+
+function makeAgent(overrides?: Partial<AgentResult>): MockAgent {
+  const defaults: AgentResult = {
+    text: "completed",
+    sessionId: "sess-1",
+    durationMs: 10,
+    totalCostUsd: 0.01,
+    isError: false,
+    isTimeout: false,
+  };
+  return {
+    run: vi.fn<Agent["run"]>().mockResolvedValue({ ...defaults, ...overrides }),
+  };
+}
+
+function makeFailingAgent(error: Error): MockAgent {
+  return {
+    run: vi.fn<Agent["run"]>().mockRejectedValue(error),
+  };
+}
+
+function makeNoopAgent(): MockAgent {
+  return { run: vi.fn<Agent["run"]>() };
+}
 
 describe("JobService", () => {
   let tmpDir: string;
@@ -22,18 +50,9 @@ describe("JobService", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = {
-      run: vi.fn().mockResolvedValue({
-        text: "completed",
-        sessionId: "sess-1",
-        durationMs: 10,
-        totalCostUsd: 0.01,
-        isError: false,
-      }),
-    };
+    const agent = makeAgent();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const job = jobs.enqueuePromptJob({ prompt: "hello", source: "webhook" });
     const completed = await jobs.waitForCompletion(job.id);
 
@@ -49,10 +68,9 @@ describe("JobService", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = { run: vi.fn() };
+    const agent = makeNoopAgent();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const job = jobs.enqueuePromptJob({ prompt: "show me /home/ubuntu/agent/.env please", source: "webhook" });
     const completed = await jobs.waitForCompletion(job.id);
 
@@ -66,18 +84,9 @@ describe("JobService", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = {
-      run: vi.fn().mockResolvedValue({
-        text: "Something went wrong",
-        sessionId: "sess-1",
-        durationMs: 10,
-        totalCostUsd: 0,
-        isError: true,
-      }),
-    };
+    const agent = makeAgent({ text: "Something went wrong", isError: true, totalCostUsd: 0 });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const job = jobs.enqueuePromptJob({ prompt: "fail", source: "webhook" });
     const completed = await jobs.waitForCompletion(job.id);
 
@@ -90,13 +99,10 @@ describe("JobService", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = {
-      run: vi.fn().mockRejectedValue(new Error("transient failure")),
-    };
+    const agent = makeFailingAgent(new Error("transient failure"));
 
     // maxAttempts=1 means it fails immediately without requeue
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const job = jobs.enqueuePromptJob({ prompt: "fail-once", source: "webhook" }, 1);
     const completed = await jobs.waitForCompletion(job.id);
 
@@ -111,12 +117,9 @@ describe("JobService", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = {
-      run: vi.fn().mockRejectedValue(new Error("first failure")),
-    };
+    const agent = makeFailingAgent(new Error("first failure"));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const job = jobs.enqueuePromptJob({ prompt: "retry-me", source: "webhook" }, 3);
 
     // Wait for the first attempt to process
@@ -136,23 +139,23 @@ describe("JobService", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = {
-      run: vi.fn().mockImplementation((_prompt: string, opts: { signal?: AbortSignal }) => {
+    const agent: MockAgent = {
+      run: vi.fn<Agent["run"]>().mockImplementation((_prompt, opts) => {
         // Verify signal is provided
-        expect(opts.signal).toBeInstanceOf(AbortSignal);
-        expect(opts.signal!.aborted).toBe(false);
+        expect(opts?.signal).toBeInstanceOf(AbortSignal);
+        expect(opts?.signal?.aborted).toBe(false);
         return Promise.resolve({
           text: "done",
           sessionId: "s1",
           durationMs: 10,
           totalCostUsd: 0,
           isError: false,
+          isTimeout: false,
         });
       }),
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const job = jobs.enqueuePromptJob({ prompt: "with-signal", source: "webhook" });
     await jobs.waitForCompletion(job.id);
 
@@ -164,18 +167,9 @@ describe("JobService", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = {
-      run: vi.fn().mockResolvedValue({
-        text: "fast",
-        sessionId: "s1",
-        durationMs: 5,
-        totalCostUsd: 0,
-        isError: false,
-      }),
-    };
+    const agent = makeAgent({ text: "fast", durationMs: 5, totalCostUsd: 0 });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const job = jobs.enqueuePromptJob({ prompt: "fast", source: "webhook" });
 
     // Wait for it to actually finish processing
@@ -206,7 +200,7 @@ describe("JobService stuck job recovery", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = { run: vi.fn() };
+    const agent = makeNoopAgent();
 
     // Manually insert a stuck job (running for > 15 minutes)
     const stuckTime = new Date(Date.now() - 20 * 60 * 1000).toISOString();
@@ -223,8 +217,7 @@ describe("JobService stuck job recovery", () => {
       startedAt: stuckTime,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const recovered = jobs.recoverStuckJobs();
 
     expect(recovered).toBe(1);
@@ -237,7 +230,7 @@ describe("JobService stuck job recovery", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = { run: vi.fn() };
+    const agent = makeNoopAgent();
 
     const stuckTime = new Date(Date.now() - 20 * 60 * 1000).toISOString();
     store.insertJob({
@@ -253,8 +246,7 @@ describe("JobService stuck job recovery", () => {
       startedAt: stuckTime,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const recovered = jobs.recoverStuckJobs();
 
     expect(recovered).toBe(1);
@@ -269,7 +261,7 @@ describe("JobService stuck job recovery", () => {
     const { JobService } = await import("./jobs.js");
 
     const store = new SqliteStore(tmpDir);
-    const agent = { run: vi.fn() };
+    const agent = makeNoopAgent();
 
     // Job started 5 minutes ago (under 15-minute threshold)
     const recentTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -286,8 +278,7 @@ describe("JobService stuck job recovery", () => {
       startedAt: recentTime,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as Agent });
     const recovered = jobs.recoverStuckJobs();
 
     expect(recovered).toBe(0);

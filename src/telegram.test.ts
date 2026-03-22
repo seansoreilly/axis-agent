@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { AgentResult } from "./agent.js";
+import type { AgentResult, Agent } from "./agent.js";
+import type { SqliteStore } from "./persistence.js";
+import type { Scheduler } from "./scheduler.js";
+import type TelegramBot from "node-telegram-bot-api";
 
 // Shared mock bot instance — captured when TelegramBot constructor is called
 let mockBotInstance: Record<string, ReturnType<typeof vi.fn>>;
@@ -68,10 +71,12 @@ function makeMsg(text: string, userId = 123) {
   return { chat: { id: 456 }, from: { id: userId }, text };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Handler = (msg: any) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CallbackHandler = (query: any) => void;
+type Handler = (msg: TelegramBot.Message) => void;
+type CallbackHandler = (query: TelegramBot.CallbackQuery) => void;
+
+/** Shape of a sendMessage mock call: [chatId, text, options?] */
+interface InlineButton { text: string; callback_data: string }
+type SendMessageCall = [number, string, { reply_markup?: { inline_keyboard: InlineButton[][] } }?];
 
 async function createBot(
   agent?: ReturnType<typeof makeAgent>,
@@ -83,8 +88,13 @@ async function createBot(
   const m = makeMemory();
   const s = makeScheduler();
   const users = opts?.allowedUsers ?? [123];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bot = new TelegramIntegration("token", users, a as any, m as any, "/tmp/test-workdir", s as any);
+  const bot = new TelegramIntegration(
+    "token", users,
+    a as unknown as Agent,
+    m as unknown as SqliteStore,
+    "/tmp/test-workdir",
+    s as unknown as Scheduler,
+  );
   bot.start();
 
   const handler = mockBotInstance.on.mock.calls.find(
@@ -1111,13 +1121,11 @@ describe("TelegramIntegration", () => {
       handler(makeMsg("hello"));
       await flush();
 
-      const call = botInstance.sendMessage.mock.calls.find(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (c: any[]) => c[2]?.reply_markup?.inline_keyboard
+      const call = (botInstance.sendMessage.mock.calls as SendMessageCall[]).find(
+        (c) => c[2]?.reply_markup?.inline_keyboard
       );
       expect(call).toBeTruthy();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const keyboard = (call as any[])[2].reply_markup.inline_keyboard as Array<Array<{ text: string; callback_data: string }>>;
+      const keyboard = call![2]!.reply_markup!.inline_keyboard;
       expect(keyboard[0][0]).toEqual({ text: "Retry", callback_data: "retry" });
       expect(keyboard[0][1]).toEqual({ text: "New session", callback_data: "new_session" });
     });
@@ -1129,13 +1137,11 @@ describe("TelegramIntegration", () => {
       handler(makeMsg("/model"));
       await flush();
 
-      const call = botInstance.sendMessage.mock.calls.find(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (c: any[]) => c[2]?.reply_markup?.inline_keyboard
+      const call = (botInstance.sendMessage.mock.calls as SendMessageCall[]).find(
+        (c) => c[2]?.reply_markup?.inline_keyboard
       );
       expect(call).toBeTruthy();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const keyboard = (call as any[])[2].reply_markup.inline_keyboard as Array<Array<{ text: string; callback_data: string }>>;
+      const keyboard = call![2]!.reply_markup!.inline_keyboard;
       const allButtons = keyboard.flat();
       const callbackData = allButtons.map(b => b.callback_data);
       expect(callbackData).toContain("model:opus");
@@ -1158,9 +1164,8 @@ describe("TelegramIntegration", () => {
 
       expect(botInstance.answerCallbackQuery).toHaveBeenCalledWith("cb-unknown");
       // No error message sent for unknown actions
-      const errorMsg = botInstance.sendMessage.mock.calls.find(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (c: any[]) => String(c[1]).toLowerCase().includes("error") || String(c[1]).toLowerCase().includes("unknown")
+      const errorMsg = (botInstance.sendMessage.mock.calls as SendMessageCall[]).find(
+        (c) => String(c[1]).toLowerCase().includes("error") || String(c[1]).toLowerCase().includes("unknown")
       );
       expect(errorMsg).toBeUndefined();
     });

@@ -7,6 +7,8 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { FastifyInstance } from "fastify";
+import type { Agent } from "./agent.js";
+import type { Scheduler } from "./scheduler.js";
 
 describe("Contract: gateway response shapes", () => {
   let app: FastifyInstance;
@@ -17,7 +19,7 @@ describe("Contract: gateway response shapes", () => {
     return { authorization: `Bearer ${TOKEN}` };
   }
 
-  function makeAgent() {
+  function makeAgent(): Pick<Agent, "run"> {
     return {
       run: vi.fn().mockResolvedValue({
         text: "agent response",
@@ -51,7 +53,7 @@ describe("Contract: gateway response shapes", () => {
 
     const store = new SqliteStore(tmpDir);
     const agent = makeAgent();
-    const scheduler = {
+    const scheduler: Pick<Scheduler, "add" | "remove" | "list" | "runNow"> = {
       add: vi.fn(),
       remove: vi.fn().mockReturnValue(true),
       list: vi.fn().mockReturnValue([
@@ -60,15 +62,12 @@ describe("Contract: gateway response shapes", () => {
       runNow: vi.fn().mockReturnValue("job-run-1"),
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = opts?.withJobs ? new JobService({ store, agent: agent as any }) : undefined;
+    const jobs = opts?.withJobs ? new JobService({ store, agent }) : undefined;
 
     app = await createGateway({
       port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
+      agent,
+      scheduler,
       jobs,
       store,
       gatewayApiToken: TOKEN,
@@ -107,8 +106,9 @@ describe("Contract: gateway response shapes", () => {
     const body = JSON.parse(res.body);
     expect(typeof body.jobId).toBe("string");
     expect(body.status).toBe("queued");
+    expect(typeof body.correlationId).toBe("string");
     // No extra unexpected keys
-    expect(Object.keys(body).sort()).toEqual(["jobId", "status"]);
+    expect(Object.keys(body).sort()).toEqual(["correlationId", "jobId", "status"]);
   });
 
   // --- POST /webhook (sync fallback without JobService) ---
@@ -116,12 +116,16 @@ describe("Contract: gateway response shapes", () => {
   it("POST /webhook (sync) returns 200 { text, sessionId, durationMs, totalCostUsd, isError }", async () => {
     const { createGateway } = await import("./gateway.js");
     const agent = makeAgent();
+    const scheduler: Pick<Scheduler, "add" | "remove" | "list" | "runNow"> = {
+      add: vi.fn(),
+      remove: vi.fn(),
+      list: vi.fn().mockReturnValue([]),
+      runNow: vi.fn(),
+    };
     app = await createGateway({
       port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: { add: vi.fn(), remove: vi.fn(), list: vi.fn().mockReturnValue([]), runNow: vi.fn() } as any,
+      agent,
+      scheduler,
       // No jobs, no gatewayApiToken — open access
     });
     const res = await app.inject({

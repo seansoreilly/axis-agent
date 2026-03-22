@@ -2,29 +2,48 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { Agent, AgentResult } from "./agent.js";
+import type { Scheduler, ScheduledTask } from "./scheduler.js";
 
 const TEST_TOKEN = "test-gateway-token";
 
-function makeAgent() {
+// ---------------------------------------------------------------------------
+// Typed mock factories
+// ---------------------------------------------------------------------------
+
+type MockAgent = Pick<Agent, "run"> & { run: ReturnType<typeof vi.fn> };
+type MockScheduler = Pick<Scheduler, "add" | "remove" | "list" | "runNow"> & {
+  add: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+  list: ReturnType<typeof vi.fn>;
+  runNow: ReturnType<typeof vi.fn>;
+};
+
+function makeAgent(): MockAgent {
   return {
-    run: vi.fn().mockResolvedValue({
+    run: vi.fn<Parameters<Agent["run"]>, Promise<AgentResult>>().mockResolvedValue({
       text: "done",
       sessionId: "sess-1",
       durationMs: 42,
       totalCostUsd: 0.02,
       isError: false,
+      isTimeout: false,
     }),
   };
 }
 
-function makeScheduler() {
+function makeScheduler(): MockScheduler {
   return {
-    add: vi.fn(),
-    remove: vi.fn().mockReturnValue(true),
-    list: vi.fn().mockReturnValue([]),
-    runNow: vi.fn().mockReturnValue("job-manual-1"),
+    add: vi.fn<[ScheduledTask], void>(),
+    remove: vi.fn<[string], boolean>().mockReturnValue(true),
+    list: vi.fn<[], ScheduledTask[]>().mockReturnValue([]),
+    runNow: vi.fn<[string], string>().mockReturnValue("job-manual-1"),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Mock fs to capture file writes without touching disk
+// ---------------------------------------------------------------------------
 
 let capturedWritePath: string | null = null;
 let capturedWriteData: string | null = null;
@@ -43,9 +62,49 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-function authHeader() {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function authHeader(): { authorization: string } {
   return { authorization: `Bearer ${TEST_TOKEN}` };
 }
+
+/** Create gateway with sensible defaults — avoids repeating agent/scheduler casts in every test. */
+async function createTestGateway(overrides: {
+  agent?: MockAgent;
+  scheduler?: MockScheduler;
+  gatewayApiToken?: string;
+  workDir?: string;
+  owntracksToken?: string;
+  store?: import("./persistence.js").SqliteStore;
+  jobs?: import("./jobs.js").JobService;
+} = {}): Promise<{
+  app: Awaited<ReturnType<typeof import("./gateway.js")["createGateway"]>>;
+  agent: MockAgent;
+  scheduler: MockScheduler;
+}> {
+  const { createGateway } = await import("./gateway.js");
+  const agent = overrides.agent ?? makeAgent();
+  const scheduler = overrides.scheduler ?? makeScheduler();
+
+  const app = await createGateway({
+    port: 0,
+    agent: agent as unknown as Agent,
+    scheduler: scheduler as unknown as Scheduler,
+    gatewayApiToken: overrides.gatewayApiToken,
+    workDir: overrides.workDir,
+    owntracksToken: overrides.owntracksToken,
+    store: overrides.store,
+    jobs: overrides.jobs,
+  });
+
+  return { app, agent, scheduler };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 describe("Gateway", () => {
   let app: Awaited<ReturnType<typeof import("./gateway.js")["createGateway"]>> | undefined;
@@ -71,18 +130,8 @@ describe("Gateway", () => {
   });
 
   it("exposes health and webhook endpoints", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a, agent } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
@@ -95,22 +144,12 @@ describe("Gateway", () => {
     });
 
     expect(webhook.statusCode).toBe(200);
-    expect(agent.run).toHaveBeenCalledWith("hello", { sessionId: "sess-old" });
+    expect(agent.run).toHaveBeenCalledWith("hello", expect.objectContaining({ sessionId: "sess-old", correlationId: expect.any(String) }));
   });
 
   it("manages scheduled tasks through HTTP", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a, scheduler } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const create = await app.inject({
       method: "POST",
@@ -131,21 +170,12 @@ describe("Gateway", () => {
   });
 
   it("accepts owntracks updates with bearer auth", async () => {
-    capturedWritePath = null;
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const response = await app.inject({
       method: "POST",
@@ -159,21 +189,11 @@ describe("Gateway", () => {
   });
 
   it("exposes admin endpoints", async () => {
-    const { createGateway } = await import("./gateway.js");
     const { SqliteStore } = await import("./persistence.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
     const store = new SqliteStore(tmpDir);
 
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      store,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a } = await createTestGateway({ store, gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const status = await app.inject({
       method: "GET",
@@ -191,18 +211,8 @@ describe("Gateway", () => {
   });
 
   it("returns 401 for protected endpoints without auth token", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a, agent } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const webhook = await app.inject({
       method: "POST",
@@ -223,18 +233,8 @@ describe("Gateway", () => {
   });
 
   it("returns 401 for wrong auth token", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a, agent } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const webhook = await app.inject({
       method: "POST",
@@ -247,18 +247,8 @@ describe("Gateway", () => {
   });
 
   it("allows access without auth when GATEWAY_API_TOKEN is not set", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      // no gatewayApiToken — backward compatible open access
-    });
+    const { app: a, agent } = await createTestGateway();
+    app = a;
 
     const webhook = await app.inject({
       method: "POST",
@@ -270,25 +260,19 @@ describe("Gateway", () => {
   });
 
   it("returns 202 with jobId when JobService is configured (async webhook)", async () => {
-    const { createGateway } = await import("./gateway.js");
     const { SqliteStore } = await import("./persistence.js");
     const { JobService } = await import("./jobs.js");
     const agent = makeAgent();
-    const scheduler = makeScheduler();
     const store = new SqliteStore(tmpDir);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jobs = new JobService({ store, agent: agent as any });
+    const jobs = new JobService({ store, agent: agent as unknown as Agent });
 
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      jobs,
+    const { app: a } = await createTestGateway({
+      agent,
       store,
+      jobs,
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const webhook = await app.inject({
       method: "POST",
@@ -313,18 +297,8 @@ describe("Gateway", () => {
   });
 
   it("returns 200 with direct result when no JobService (fallback)", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      // No jobs or gatewayApiToken — open access, direct execution
-    });
+    const { app: a, agent } = await createTestGateway();
+    app = a;
 
     const webhook = await app.inject({
       method: "POST",
@@ -336,22 +310,12 @@ describe("Gateway", () => {
     const body = JSON.parse(webhook.body);
     expect(body.text).toBe("done");
     expect(body.isError).toBe(false);
-    expect(agent.run).toHaveBeenCalledWith("direct", { sessionId: undefined });
+    expect(agent.run).toHaveBeenCalledWith("direct", expect.objectContaining({ sessionId: undefined, correlationId: expect.any(String) }));
   });
 
   it("triggers a task run on demand via POST /tasks/:id/run", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a, scheduler } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const response = await app.inject({
       method: "POST",
@@ -367,21 +331,13 @@ describe("Gateway", () => {
   });
 
   it("returns 404 when triggering nonexistent task", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
     const scheduler = makeScheduler();
     scheduler.runNow.mockImplementation(() => {
       throw new Error("Task not found: nope");
     });
 
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a } = await createTestGateway({ scheduler, gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const response = await app.inject({
       method: "POST",
@@ -393,18 +349,8 @@ describe("Gateway", () => {
   });
 
   it("webhook sync response includes sessionId from agent result", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const res = await app.inject({
       method: "POST",
@@ -419,18 +365,8 @@ describe("Gateway", () => {
   });
 
   it("webhook without sessionId passes undefined to agent.run", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a, agent } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     await app.inject({
       method: "POST",
@@ -439,21 +375,12 @@ describe("Gateway", () => {
       payload: { prompt: "no session here" },
     });
 
-    expect(agent.run).toHaveBeenCalledWith("no session here", { sessionId: undefined });
+    expect(agent.run).toHaveBeenCalledWith("no session here", expect.objectContaining({ sessionId: undefined, correlationId: expect.any(String) }));
   });
 
   it("includes security headers from helmet", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-    });
+    const { app: a } = await createTestGateway();
+    app = a;
 
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.headers["x-content-type-options"]).toBe("nosniff");
@@ -461,22 +388,12 @@ describe("Gateway", () => {
   });
 
   it("GET /admin/events returns events array with correct shape", async () => {
-    const { createGateway } = await import("./gateway.js");
     const { SqliteStore } = await import("./persistence.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
     const store = new SqliteStore(tmpDir);
     store.addEvent("test-event", { detail: "value" });
 
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      store,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a } = await createTestGateway({ store, gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const res = await app.inject({ method: "GET", url: "/admin/events", headers: authHeader() });
     expect(res.statusCode).toBe(200);
@@ -491,18 +408,8 @@ describe("Gateway", () => {
   });
 
   it("POST /tasks returns 400 when required fields are missing", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const res = await app.inject({
       method: "POST",
@@ -515,20 +422,12 @@ describe("Gateway", () => {
   });
 
   it("POST /owntracks returns 400 for non-location payloads", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const res = await app.inject({
       method: "POST",
@@ -542,19 +441,12 @@ describe("Gateway", () => {
   // --- OwnTracks: Basic auth coverage ---
 
   it("accepts owntracks updates with HTTP Basic auth (iOS)", async () => {
-    capturedWritePath = null;
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const basicAuth = Buffer.from("iosuser:secret").toString("base64");
     const response = await app.inject({
@@ -569,18 +461,12 @@ describe("Gateway", () => {
   });
 
   it("rejects owntracks with wrong Basic auth password", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const basicAuth = Buffer.from("user:wrong-password").toString("base64");
     const response = await app.inject({
@@ -594,19 +480,12 @@ describe("Gateway", () => {
   });
 
   it("handles Basic auth with colons in password", async () => {
-    capturedWritePath = null;
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "pass:with:colons",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const basicAuth = Buffer.from("user:pass:with:colons").toString("base64");
     const response = await app.inject({
@@ -621,18 +500,12 @@ describe("Gateway", () => {
   });
 
   it("rejects owntracks with no auth header", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const response = await app.inject({
       method: "POST",
@@ -646,18 +519,12 @@ describe("Gateway", () => {
   // --- OwnTracks: Timestamp validation ---
 
   it("rejects owntracks location with timestamp too far in the future", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const futureTs = Math.floor(Date.now() / 1000) + 3600; // 1 hour in the future
     const response = await app.inject({
@@ -671,19 +538,12 @@ describe("Gateway", () => {
   });
 
   it("accepts owntracks location with recent timestamp (within 24h)", async () => {
-    capturedWritePath = null;
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const recentTs = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
     const response = await app.inject({
@@ -698,18 +558,12 @@ describe("Gateway", () => {
   });
 
   it("rejects owntracks location with very stale timestamp (>24h old)", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const staleTs = Math.floor(Date.now() / 1000) - (48 * 3600); // 48 hours ago
     const response = await app.inject({
@@ -726,18 +580,12 @@ describe("Gateway", () => {
 
   it("writes location file atomically (write-then-rename)", async () => {
     capturedRenamePaths = null;
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     await app.inject({
       method: "POST",
@@ -757,18 +605,12 @@ describe("Gateway", () => {
 
   it("writes correct location data shape to file", async () => {
     capturedWriteData = null;
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      agent: agent as any,
-      scheduler: scheduler as any,
+    const { app: a } = await createTestGateway({
       workDir: tmpDir,
       owntracksToken: "secret",
       gatewayApiToken: TEST_TOKEN,
     });
+    app = a;
 
     const tst = Math.floor(Date.now() / 1000);
     await app.inject({
@@ -793,18 +635,8 @@ describe("Gateway", () => {
   });
 
   it("all protected routes return 401 without auth", async () => {
-    const { createGateway } = await import("./gateway.js");
-    const agent = makeAgent();
-    const scheduler = makeScheduler();
-
-    app = await createGateway({
-      port: 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      agent: agent as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scheduler: scheduler as any,
-      gatewayApiToken: TEST_TOKEN,
-    });
+    const { app: a } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
+    app = a;
 
     const protectedRoutes = [
       { method: "POST" as const, url: "/webhook", payload: { prompt: "test" } },

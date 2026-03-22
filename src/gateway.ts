@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Fastify from "fastify";
@@ -11,6 +11,7 @@ import type { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
 import { type SqliteStore } from "./persistence.js";
 import type { VoiceService } from "./voice.js";
+import type { HealthWatchdog } from "./watchdog.js";
 
 /** Timing-safe string comparison to prevent timing attacks on token validation. */
 function safeEqual(a: string, b: string): boolean {
@@ -60,8 +61,8 @@ interface CallBody {
 
 interface GatewayOptions {
   port: number;
-  agent: Agent;
-  scheduler: Scheduler;
+  agent: Pick<Agent, "run">;
+  scheduler: Pick<Scheduler, "add" | "remove" | "list" | "runNow">;
   jobs?: JobService;
   store?: SqliteStore;
   workDir?: string;
@@ -69,6 +70,7 @@ interface GatewayOptions {
   gatewayApiToken?: string;
   voiceService?: VoiceService;
   onInboundSms?: (from: string, body: string) => void;
+  watchdog?: HealthWatchdog;
 }
 
 export async function createGateway(
@@ -88,9 +90,10 @@ export async function createGateway(
 
   // --- Public routes (no auth) ---
   app.get("/health", async () => ({
-    status: "ok",
+    status: opts.watchdog?.getStatus().status ?? "ok",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
+    checks: opts.watchdog?.getStatus().checks,
   }));
 
   // --- Protected routes (bearer auth when GATEWAY_API_TOKEN is set) ---
@@ -109,6 +112,7 @@ export async function createGateway(
       config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
     }, async (request, reply) => {
       const { prompt, sessionId } = request.body;
+      const correlationId = randomUUID();
 
       if (!prompt || typeof prompt !== "string") {
         return reply.status(400).send({ error: "prompt is required" });
@@ -119,17 +123,18 @@ export async function createGateway(
       if (jobs) {
         // Async: enqueue and return job ID immediately — client polls /admin/jobs
         const job = jobs.enqueuePromptJob({ prompt, sessionId, source: "webhook" });
-        return reply.status(202).send({ jobId: job.id, status: "queued" });
+        return reply.status(202).send({ jobId: job.id, status: "queued", correlationId });
       }
 
       // Fallback: direct execution (no job service)
-      const result = await agent.run(prompt, { sessionId });
+      const result = await agent.run(prompt, { sessionId, correlationId });
       return {
         text: result.text,
         sessionId: result.sessionId,
         durationMs: result.durationMs,
         totalCostUsd: result.totalCostUsd,
         isError: result.isError,
+        correlationId,
       };
     });
 

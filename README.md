@@ -365,7 +365,7 @@ src/
   persistence.ts        # SQLite-backed storage for jobs, sessions, tasks, and events
   scheduler.ts          # Cron-based task scheduling
   jobs.ts               # Durable job queue (webhook and scheduler-triggered runs)
-  metrics.ts            # In-process counters and gauges for operational metrics
+  metrics.ts            # In-process counters, gauges, and histograms for operational metrics
   policies.ts           # Declarative blocked-command policy (soft + hard enforcement)
   preflight.ts          # Startup health checks (dirs, auth, Telegram API, CLI paths)
   logger.ts             # Structured JSON logging
@@ -373,6 +373,11 @@ src/
   voice.ts              # Voice calling service (Retell.ai SDK, call monitoring)
   identity.ts           # Granular identity files (SOUL.md, USER.md, TOOLS.md) loader and composer
   transcript.ts         # JSONL session transcript logger (append, search, export)
+  checkpoint.ts         # Save/restore interrupted agent runs (per-user, with expiry and pruning)
+  circuit-breaker.ts    # Circuit breaker pattern for external service calls (closed/open/half-open)
+  heartbeat.ts          # Periodic heartbeat checks with file-based item tracking
+  watchdog.ts           # Health watchdog with pluggable checks and severity levels
+  reflection.ts         # Post-task reflection service (cost/duration analysis, insights logging)
 workspace-CLAUDE.md     # Static agent instructions deployed to workDir (auto-loaded by Claude Code)
 scripts/
   sync-secrets.sh       # Fetch individual secrets from Bitwarden folder, push to server

@@ -14,7 +14,7 @@ export interface PromptJobPayload {
 
 export interface JobServiceOptions {
   store: SqliteStore;
-  agent: Agent;
+  agent: Pick<Agent, "run">;
 }
 
 function nowIso(): string {
@@ -151,12 +151,14 @@ export class JobService {
     this.opts.store.updateJob(job);
     this.opts.store.addEvent("job_started", { jobId: job.id, source: payload.source });
 
+    const correlationId = randomUUID();
     const controller = new AbortController();
     const jobTimeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000);
     try {
       const result = await this.opts.agent.run(payload.prompt, {
         sessionId: payload.sessionId,
         signal: controller.signal,
+        correlationId,
       });
       job.resultText = result.text;
       job.resultSessionId = result.sessionId || undefined;
@@ -171,6 +173,7 @@ export class JobService {
         jobId: job.id,
         status: job.status,
         source: payload.source,
+        correlationId,
       });
       metrics.increment(result.isError ? "jobs.failed" : "jobs.succeeded");
       this.notifyWaiters(job);

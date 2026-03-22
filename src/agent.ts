@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import type { Config } from "./config.js";
 import type { SqliteStore } from "./persistence.js";
-import { error as logError, info } from "./logger.js";
+import { error as logError, info, createLogger } from "./logger.js";
 import { ensureValidToken } from "./auth.js";
 import { DynamicContextBuilder } from "./dynamic-context.js";
 import { ProcessManager } from "./persistent-process.js";
@@ -225,14 +225,18 @@ export class Agent {
       signal?: AbortSignal;
       userId?: number;
       timeoutMs?: number;
+      correlationId?: string;
       onActivity?: (event: { tool?: string; text?: string }) => void;
     }
   ): Promise<AgentResult> {
     const { claude } = this.config;
     const model = opts?.model ?? claude.model;
     const timeoutMs = opts?.timeoutMs ?? claude.agentTimeoutMs;
+    const log = createLogger(opts?.correlationId);
 
     await this.ensureReady();
+
+    log.info("agent", `Starting run (model: ${model}, timeout: ${timeoutMs}ms)`);
 
     // Use persistent process for user-initiated requests
     if (opts?.userId) {

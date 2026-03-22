@@ -3,6 +3,8 @@ import { mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runCheckCommand, validateCheckCommand, splitCommandArgs } from "./scheduler.js";
+import type { Agent } from "./agent.js";
+import type { JobService } from "./jobs.js";
 
 // Mock node-cron to avoid real scheduling
 const mockSchedule = vi.fn();
@@ -28,34 +30,50 @@ vi.mock("cron-parser", () => ({
   },
 }));
 
-// Mock agent
-function makeAgent() {
+/** Minimal mock agent satisfying only the `run` method used by Scheduler. */
+type MockAgent = Pick<Agent, "run">;
+
+function makeAgent(): MockAgent {
   return {
-    run: vi.fn().mockResolvedValue({
+    run: vi.fn<Agent["run"]>().mockResolvedValue({
       text: "done",
       sessionId: "s1",
       durationMs: 100,
       totalCostUsd: 0.01,
       isError: false,
+      isTimeout: false,
     }),
-    generateSummary: vi.fn().mockResolvedValue(null),
-    shouldSummarize: vi.fn().mockReturnValue(false),
   };
 }
 
-// Mock JobService
-function makeJobs() {
+/** Minimal mock JobService satisfying the methods Scheduler calls. */
+type MockJobService = Pick<JobService, "enqueuePromptJob" | "waitForCompletion">;
+
+function makeJobs(): MockJobService {
   return {
-    enqueuePromptJob: vi.fn().mockReturnValue({ id: "job-1" }),
-    waitForCompletion: vi.fn().mockResolvedValue({
+    enqueuePromptJob: vi.fn<JobService["enqueuePromptJob"]>().mockReturnValue({
       id: "job-1",
+      type: "prompt",
+      status: "queued",
+      payloadJson: "{}",
+      attempts: 0,
+      maxAttempts: 2,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      runAfter: new Date().toISOString(),
+    }),
+    waitForCompletion: vi.fn<JobService["waitForCompletion"]>().mockResolvedValue({
+      id: "job-1",
+      type: "prompt",
       status: "succeeded",
+      payloadJson: "{}",
+      attempts: 1,
+      maxAttempts: 2,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      runAfter: new Date().toISOString(),
       resultText: "done",
     }),
-    listJobs: vi.fn().mockReturnValue([]),
-    getJob: vi.fn(),
-    recoverStuckJobs: vi.fn().mockReturnValue(0),
-    processQueue: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -177,8 +195,7 @@ describe("Scheduler with monitor tasks", () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     const jobs = makeJobs();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, undefined, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "monitor-1",
@@ -199,8 +216,7 @@ describe("Scheduler with monitor tasks", () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     const jobs = makeJobs();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, undefined, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "monitor-2",
@@ -219,8 +235,7 @@ describe("Scheduler with monitor tasks", () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     const jobs = makeJobs();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, undefined, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "monitor-3",
@@ -242,8 +257,7 @@ describe("Scheduler with monitor tasks", () => {
     const agent = makeAgent();
     const jobs = makeJobs();
     const onResult = vi.fn();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, onResult, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "monitor-4",
@@ -268,8 +282,7 @@ describe("Scheduler with monitor tasks", () => {
     const agent = makeAgent();
     const jobs = makeJobs();
     const onResult = vi.fn();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, onResult, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "monitor-5",
@@ -297,8 +310,7 @@ describe("Scheduler with monitor tasks", () => {
     const agent = makeAgent();
     const jobs = makeJobs();
     const onResult = vi.fn();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, onResult, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "regular-1",
@@ -324,8 +336,7 @@ describe("Scheduler with monitor tasks", () => {
     const agent = makeAgent();
     const jobs = makeJobs();
     const onResult = vi.fn();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, onResult, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "manual-1",
@@ -352,8 +363,7 @@ describe("Scheduler with monitor tasks", () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     const jobs = makeJobs();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, undefined, tmpDir, jobs as JobService);
 
     expect(() => scheduler.runNow("nonexistent")).toThrow("Task not found: nonexistent");
   });
@@ -362,8 +372,7 @@ describe("Scheduler with monitor tasks", () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     const jobs = makeJobs();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, undefined, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "disabled-1",
@@ -381,8 +390,7 @@ describe("Scheduler with monitor tasks", () => {
     const agent = makeAgent();
     const jobs = makeJobs();
     const onResult = vi.fn();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, onResult, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, onResult, tmpDir, jobs as JobService);
 
     scheduler.add({
       id: "monitor-6",
@@ -404,8 +412,7 @@ describe("Scheduler with monitor tasks", () => {
     const { Scheduler } = await import("./scheduler.js");
     const agent = makeAgent();
     const jobs = makeJobs();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const scheduler = new Scheduler(agent as any, undefined, tmpDir, jobs as any);
+    const scheduler = new Scheduler(agent as Agent, undefined, tmpDir, jobs as JobService);
 
     expect(() =>
       scheduler.add({
