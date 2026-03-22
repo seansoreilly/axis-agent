@@ -69,13 +69,17 @@ The agent runs as a single Node.js process under systemd with security hardening
 
 ### Integrations
 
-#### Google Workspace CLI (`gws`) — Primary Google Integration
+#### Google Workspace
 
-The agent uses [`@googleworkspace/cli`](https://www.npmjs.com/package/@googleworkspace/cli) as its primary tool for **all Google services**: Gmail, Calendar, Contacts, Drive, Sheets, Docs, and Admin. Authenticated via OAuth token (`~/.config/gws/credentials.json`) with full read/write scopes. A cron job refreshes the token every 3 days to prevent expiry.
+**Calendar and Gmail** use native MCP tools (`mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Gmail__*`) — structured JSON responses, parallel queries, richer API access.
+
+**All other Google services** (Contacts, Drive, Sheets, Docs, Slides, Tasks, Chat, Forms, Keep, Meet) use [`@googleworkspace/cli`](https://www.npmjs.com/package/@googleworkspace/cli) (`gws`). Authenticated via OAuth token (`~/.config/gws/credentials.json`). A cron job refreshes the token every 3 days to prevent expiry.
+
+Never use Composio for Google operations.
 
 #### Composio MCP
 
-[Composio](https://composio.dev/) provides 1000+ third-party integrations via a single HTTP-based MCP server. Used for **non-Google** services only — Google operations should use `gws` instead.
+[Composio](https://composio.dev/) provides 1000+ third-party integrations via a single HTTP-based MCP server. Used for **non-Google** services only.
 
 #### Native Trello MCP
 
@@ -125,6 +129,8 @@ Up-to-date library documentation lookup via [@upstash/context7-mcp](https://gith
 - Session resume via `--resume <sessionId>` preserves full conversation history
 - **Granular identity files** — optional `USER.md` (user context) and `TOOLS.md` (capability routing) loaded alongside `SOUL.md` and injected into the system prompt
 - **JSONL transcript logging** — every conversation turn is logged as `<sessionId>.jsonl` files for audit trails, debugging, and full-text search across sessions
+- **LEARNINGS.md** — non-obvious debugging insights and patterns injected into every system prompt so the agent learns from past sessions
+- **Reflection loop** — after tasks exceeding cost/duration thresholds, a background reflection evaluates performance and appends structured insights (`reflections.jsonl`); recent reflections are also injected into the system prompt
 
 ### Orchestration
 - Spawns parallel subagents for complex multi-part tasks
@@ -356,7 +362,7 @@ src/
   agent.ts              # Claude Code CLI orchestrator (persistent + one-shot modes)
   persistent-process.ts # Long-lived CLI process via --input-format stream-json (multi-turn)
   auth.ts               # OAuth token refresh (proactive + periodic)
-  dynamic-context.ts    # Builds --append-system-prompt payload (identity, tasks, policies, datetime)
+  dynamic-context.ts    # Builds --append-system-prompt payload (identity, tasks, policies, datetime, learnings, reflections)
   gateway.ts            # Fastify HTTP server (webhook + task management + admin endpoints)
   telegram.ts           # Telegram Bot API connector (commands, media, inline keyboards)
   telegram-commands.ts  # Telegram command definitions and registry
