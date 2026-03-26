@@ -6,12 +6,13 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import type { Agent } from "./agent.js";
 import type { Scheduler, ScheduledTask } from "./scheduler.js";
-import { info } from "./logger.js";
+import { info, error as logError } from "./logger.js";
 import type { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
 import { type SqliteStore } from "./persistence.js";
 import type { VoiceService } from "./voice.js";
 import type { HealthWatchdog } from "./watchdog.js";
+import { buildConsentUrl, exchangeCodeForTokens, writeGwsCredentials, testGwsToken } from "./gws-auth.js";
 
 /** Timing-safe string comparison to prevent timing attacks on token validation. */
 function safeEqual(a: string, b: string): boolean {
@@ -225,6 +226,78 @@ export async function createGateway(
     }));
 
     protectedApp.get("/admin/metrics", async () => metrics.snapshot());
+
+    // --- Google Workspace OAuth re-auth flow ---
+
+    protectedApp.get("/admin/gws-status", async () => {
+      const status = await testGwsToken();
+      return status;
+    });
+
+    protectedApp.get("/admin/gws-auth", async (_request, reply) => {
+      const consentUrl = buildConsentUrl();
+      const status = await testGwsToken();
+      reply.header("Content-Type", "text/html");
+      return `<!DOCTYPE html>
+<html><head><title>gws OAuth</title>
+<style>body{font-family:system-ui;max-width:600px;margin:40px auto;padding:0 20px}
+.status{padding:12px;border-radius:6px;margin:16px 0}
+.valid{background:#d4edda;color:#155724}.invalid{background:#f8d7da;color:#721c24}
+input[type=text]{width:100%;padding:8px;box-sizing:border-box;font-family:monospace}
+button{padding:8px 16px;margin-top:8px;cursor:pointer}</style></head>
+<body>
+<h2>Google Workspace OAuth</h2>
+<div class="status ${status.valid ? "valid" : "invalid"}">
+Token status: <strong>${status.valid ? "Valid" : "Invalid"}</strong>
+${status.error ? `<br><small>${status.error}</small>` : ""}
+</div>
+${status.valid ? "<p>Token is working. No action needed.</p>" : `
+<h3>Re-authenticate</h3>
+<ol>
+<li><a href="${consentUrl}" target="_blank">Click here to open Google consent</a></li>
+<li>Approve access, then copy the <code>code=</code> value from the redirect URL</li>
+<li>Paste it below and submit</li>
+</ol>
+<form method="POST" action="/admin/gws-auth">
+<input type="text" name="code" placeholder="Paste authorization code here" required />
+<br><button type="submit">Exchange &amp; Save Token</button>
+</form>`}
+</body></html>`;
+    });
+
+    protectedApp.post<{ Body: { code?: string } }>("/admin/gws-auth", async (request, reply) => {
+      const code = request.body?.code?.trim();
+      if (!code) {
+        return reply.status(400).send({ error: "code is required" });
+      }
+
+      try {
+        const { refreshToken } = await exchangeCodeForTokens(code);
+        writeGwsCredentials(refreshToken);
+        const status = await testGwsToken();
+
+        if (!status.valid) {
+          return reply.status(500).send({ error: "Token saved but verification failed", details: status.error });
+        }
+
+        info("gateway", "gws OAuth token refreshed successfully via gateway");
+
+        reply.header("Content-Type", "text/html");
+        return `<!DOCTYPE html>
+<html><head><title>gws OAuth</title>
+<style>body{font-family:system-ui;max-width:600px;margin:40px auto;padding:0 20px}
+.success{padding:12px;border-radius:6px;background:#d4edda;color:#155724}</style></head>
+<body>
+<h2>Google Workspace OAuth</h2>
+<div class="success"><strong>Token refreshed and verified successfully.</strong></div>
+<p><a href="/admin/gws-auth">Back to status</a></p>
+</body></html>`;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logError("gateway", `gws OAuth exchange failed: ${message}`);
+        return reply.status(400).send({ error: message });
+      }
+    });
 
     // Twilio inbound SMS webhook (only if callback is configured)
     if (opts.onInboundSms) {

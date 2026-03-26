@@ -1,6 +1,6 @@
 {
   "name": "axis-agent",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "Axis Agent — always-on AI agent powered by Claude Agent SDK with Telegram integration",
   "type": "module",
   "scripts": {
