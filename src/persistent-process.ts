@@ -111,7 +111,12 @@ export class PersistentProcess {
     this.proc = spawn("claude", args, {
       cwd: opts.workDir,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" },
+      env: {
+        ...process.env,
+        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+        CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+        CLAUDE_STREAM_IDLE_TIMEOUT_MS: String((opts.maxBudgetUsd > 0 ? 600 : 90) * 1000 + 30_000),
+      },
     });
 
     this.ready = new Promise<void>((resolve, reject) => {

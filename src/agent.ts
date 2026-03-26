@@ -61,7 +61,12 @@ function spawnClaude(args: string[], opts: {
     const proc = spawn("claude", args, {
       cwd: opts.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" },
+      env: {
+        ...process.env,
+        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+        CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+        CLAUDE_STREAM_IDLE_TIMEOUT_MS: String(opts.timeoutMs + 30_000),
+      },
     });
 
     const timeoutId = setTimeout(() => {
