@@ -1,111 +1,136 @@
 ---
-name: Review Claude Code CLI Updates
-description: Research recent Claude Code CLI updates, identify agent improvements, implement changes, test, commit, and deploy
+name: Review Claude Code CLI Features
+description: Audit all current Claude Code CLI features against agent usage, implement improvements, test, commit, and deploy
 user_invocable: true
 tags: [maintenance, cli, self-improvement, automation]
 ---
 
-# /review-cc-updates — Claude Code CLI Update Review & Implementation
+# /review-cc-updates — Claude Code CLI Feature Audit & Self-Improvement
 
-When the user invokes `/review-cc-updates [N]`, research the latest Claude Code CLI updates from the last N days (default: 2), identify improvements that benefit the agent, implement them, test, commit, and deploy.
+Perform a comprehensive audit of ALL current Claude Code CLI features, flags, env vars, and capabilities. Compare against how this agent uses the CLI. Adopt anything that improves reliability, performance, security, or capability. Implement, test, commit, and deploy autonomously.
 
-## Step 1: Research Recent CLI Updates
+## Step 1: Discover All CLI Capabilities
 
-Use multiple sources to find what changed in the last N days:
+Build a comprehensive inventory of every CLI feature available:
 
-1. **WebSearch** for:
-   - `"Claude Code" changelog site:docs.anthropic.com` (last N days)
-   - `"Claude Code" new features OR update OR release` (last N days)
-   - `anthropic claude code CLI changelog`
-
-2. **Check the installed CLI**:
+1. **Full CLI help**:
    ```bash
-   claude --version 2>/dev/null
-   claude --help 2>/dev/null | head -50
+   claude --version
+   claude --help 2>/dev/null
    ```
 
-3. **Check npm for Claude Code packages**:
+2. **Official documentation** — fetch the full docs:
+   - WebFetch `https://code.claude.com/docs/en/reference/cli-commands` — all CLI flags and options
+   - WebFetch `https://code.claude.com/docs/en/reference/env-variables` — all environment variables
+   - WebFetch `https://code.claude.com/docs/en/reference/hooks` — hook events and configuration
+   - WebFetch `https://code.claude.com/docs/en/reference/settings` — all settings
+   - WebFetch `https://code.claude.com/docs/en/changelog` — recent changelog for context
+
+3. **SDK capabilities** (for programmatic usage):
    ```bash
-   npm view @anthropic-ai/claude-code versions --json 2>/dev/null | tail -10
-   npm view @anthropic-ai/claude-agent-sdk versions --json 2>/dev/null | tail -10
+   npm view @anthropic-ai/claude-agent-sdk version 2>/dev/null
+   find node_modules/@anthropic-ai/claude-agent-sdk -name '*.d.ts' -type f 2>/dev/null | head -5
    ```
+   Read the main type definition file to understand the SDK API surface.
 
-4. **Check GitHub releases** (if available):
+4. **Check for CLI updates**:
    ```bash
-   gh api repos/anthropics/claude-code/releases --jq '.[0:5] | .[] | "\(.tag_name) \(.published_at) \(.name)"' 2>/dev/null
+   npm view @anthropic-ai/claude-code version 2>/dev/null
    ```
+   If the server CLI is behind, upgrade it: `sudo npm install -g @anthropic-ai/claude-code@latest`
 
-5. **Fetch official docs** for any new features discovered:
-   - Use `context7` MCP to look up Claude Code documentation
-   - Use `WebFetch` on any changelog URLs found
+Compile a structured inventory:
+- **CLI flags**: every `--flag` with description
+- **Environment variables**: every `CLAUDE_*` and `ANTHROPIC_*` var
+- **Settings**: every configurable setting
+- **Hook events**: every hook event type
+- **Tools**: built-in tool list and configuration options
+- **MCP**: configuration and management options
 
-Compile a bullet list of all new features, flags, options, and behavioral changes found.
+## Step 2: Audit Agent Usage
 
-## Step 2: Analyze Agent Impact
-
-Read the agent's core files to understand current CLI usage patterns:
+Read the agent's core files to understand current CLI usage:
 
 | File | What to Check |
 |---|---|
-| `src/agent.ts` | CLI flags, spawn args, `--output-format`, `--input-format`, `--allowed-tools`, `--agents` |
-| `src/persistent-process.ts` | Process management, stream-json handling, model switching |
-| `src/dynamic-context.ts` | `--append-system-prompt` usage |
-| `src/config.ts` | CLI-related config options |
-| `src/index.ts` | Startup flags, env vars like `CLAUDE_CODE_EXPERIMENTAL_*` |
-| `CLAUDE.md` | Documented CLI usage patterns |
-| `workspace-CLAUDE.md` | Workspace-level agent instructions |
+| `src/agent.ts` | CLI spawn args, env vars, `--allowed-tools`, `--agents`, one-shot mode |
+| `src/persistent-process.ts` | Persistent process spawn args, env vars, stream-json handling |
+| `src/dynamic-context.ts` | `--append-system-prompt` content |
+| `src/config.ts` | CLI-related config options, env var mapping |
+| `src/index.ts` | Startup sequence, env vars, feature flags |
+| `src/auth.ts` | OAuth token handling |
+| `src/policies.ts` | Command blocking patterns |
+| `CLAUDE.md` | Documented CLI patterns |
+| `workspace-CLAUDE.md` | Workspace-level instructions |
+| `.mcp.json` | MCP server configuration |
 
-For each new feature found in Step 1, classify as:
+For every CLI feature from Step 1, classify as:
 
-- **adopt** — Direct benefit to the agent. Clear improvement in reliability, performance, or capability.
-- **evaluate** — Potentially useful but needs testing or has trade-offs.
-- **skip** — Not relevant to this agent's headless/Telegram use case.
+- **adopt** — Clear improvement to reliability, performance, security, or capability. Low risk.
+- **evaluate** — Potentially useful but has trade-offs. Needs testing or user input.
+- **already-used** — Agent already uses this feature.
+- **not-applicable** — Not relevant to headless/Telegram/systemd use case (e.g., voice, UI, interactive-only features).
 
-## Step 3: Implement Beneficial Changes
+Focus on:
+- Security hardening env vars and flags
+- Performance optimization options
+- Reliability and error handling improvements
+- New tools or capabilities that expand what the agent can do
+- Better subprocess/process management options
+- Improved MCP server management
+
+## Step 3: Implement Improvements
 
 For each **adopt** item:
-
 1. Read the relevant source files fully before making changes
 2. Implement the change
-3. Explain what changed and why in a brief comment to the user
+3. Log what changed and why
 
 For each **evaluate** item:
-- Describe the trade-off and ask the user before implementing (or implement behind a feature flag / env var)
+- If running autonomously (scheduled task): implement behind an env var flag, default off
+- If running interactively: describe the trade-off and ask the user
 
-For **skip** items:
-- List them with a one-line reason why they don't apply
+**Do not change behavior that is working well.** Only adopt features that are strictly additive or replace inferior patterns.
 
 ## Step 4: Test
 
 1. **Build**: `npm run build` — must compile cleanly
 2. **Unit tests**: `npm test` — all existing tests must pass
 3. **If new behavior was added**: Write or update tests to cover it
-4. **Regression check**: Ensure no existing functionality broke
+4. **Regression**: Verify no existing functionality broke
 
-If tests fail, fix the issue before proceeding. Do not skip failing tests.
+If tests fail, fix the issue. Do not skip failing tests. If a change causes test failures that can't be resolved, revert it.
 
 ## Step 5: Commit & Deploy
 
-1. Run `/commit` skill (or follow its process: check secrets, check PII, update README if needed, commit, push)
+Only proceed if changes were made in Step 3. If no improvements were found, skip to Step 6.
+
+1. Check for secrets/PII in the diff
 2. Version bump: `npm version patch` for fixes, `npm version minor` for new features
-3. Deploy: `DEPLOY_HOST="ubuntu@54.66.167.208" ./deploy.sh`
-4. Verify deployment: check post-deploy health checks pass
+3. Commit with a descriptive message
+4. Push to remote
+5. Deploy: `DEPLOY_HOST="ubuntu@54.66.167.208" ./deploy.sh`
+6. Verify all post-deploy health checks pass
 
 ## Step 6: Report
 
-Output a summary:
+Send a summary via the response (Telegram if scheduled):
 
-### CLI Updates Found (last N days)
-- Bullet list of changes discovered
+### CLI Version
+- Installed version, latest available, whether an upgrade was performed
 
-### Changes Implemented
-- What was adopted and why
+### Features Adopted
+- What was implemented and why (bullet list)
 
-### Changes Skipped
-- What was not adopted and why
+### Features Evaluated
+- Trade-offs noted, whether implemented behind flags
 
-### Test Results
-- Build status, test count, any new tests added
+### Already In Use
+- Confirmation of features the agent already leverages
 
-### Deploy Status
-- Version deployed, health check results
+### Not Applicable
+- Brief list with one-line reasons
+
+### Test & Deploy Results
+- Build status, test count, deploy health check results
+- "No changes needed" if nothing was adopted
