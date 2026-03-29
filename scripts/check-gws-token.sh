@@ -11,6 +11,20 @@ if [ ! -f "$CREDS" ]; then
   exit 0
 fi
 
+# Check that the credentials file contains OAuth user credentials, not a service account
+cred_type=$(python3 -c "import json; print(json.load(open('$CREDS')).get('type',''))" 2>/dev/null)
+if [ "$cred_type" != "authorized_user" ]; then
+  echo "CRITICAL: gws credentials file has wrong type '$cred_type' (expected 'authorized_user'). The file may have been overwritten with a service account key. Re-authentication required."
+  exit 0
+fi
+
+# Verify refresh_token exists
+has_refresh=$(python3 -c "import json; d=json.load(open('$CREDS')); print('yes' if d.get('refresh_token') else 'no')" 2>/dev/null)
+if [ "$has_refresh" != "yes" ]; then
+  echo "gws credentials file is missing refresh_token. Re-authentication required."
+  exit 0
+fi
+
 # Try a lightweight Gmail API call via gws
 result=$(gws gmail users getProfile --params '{"userId":"me"}' 2>&1)
 

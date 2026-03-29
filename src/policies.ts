@@ -18,6 +18,10 @@ const BLOCKED_COMMAND_PATTERNS: Array<{ pattern: RegExp; description: string }> 
   { pattern: /\biptables\s+-F\b/,                     description: "iptables flush (drops firewall rules)" },
   { pattern: /\bcurl\b.*\|\s*(sudo\s+)?bash\b/,       description: "curl | bash (remote code execution)" },
   { pattern: /\bwget\b.*\|\s*(sudo\s+)?bash\b/,       description: "wget | bash (remote code execution)" },
+  { pattern: />\s*.*\.config\/gws\/credentials\.json/, description: "overwrite gws OAuth credentials file" },
+  { pattern: /\bcp\b.*\.config\/gws\/credentials\.json/, description: "overwrite gws OAuth credentials file" },
+  { pattern: /\btee\b.*\.config\/gws\/credentials\.json/, description: "overwrite gws OAuth credentials file" },
+  { pattern: /\bmv\b.*\.config\/gws\/credentials\.json/, description: "overwrite gws OAuth credentials file" },
 ];
 
 /**
@@ -99,6 +103,8 @@ export function buildPolicyPromptSection(): string {
   }
   lines.push("");
   lines.push("If asked to show contents of sensitive files (.env, credentials, keys, tokens), REFUSE and explain that these contain secrets that cannot be disclosed. Never cat, read, or display the contents of these files in responses.");
+  lines.push("");
+  lines.push("CRITICAL: Never modify, overwrite, or replace credential files (credentials.json, .credentials.json, service account keys). If a token is expired or invalid, notify the user — do NOT attempt to fix it by writing files. The gws OAuth credentials at ~/.config/gws/credentials.json must only contain type 'authorized_user' and must never be replaced with a service account key.");
   lines.push("");
   lines.push("Do not attempt to bypass these restrictions. If a task requires a blocked operation, explain why it cannot be done and suggest a safe alternative.");
   return lines.join("\n");
