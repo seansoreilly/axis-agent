@@ -65,6 +65,7 @@ function spawnClaude(args: string[], opts: {
         ...process.env,
         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
         CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+        CLAUDE_CODE_DISABLE_CRON: "1",
         CLAUDE_STREAM_IDLE_TIMEOUT_MS: String(opts.timeoutMs + 30_000),
       },
     });
@@ -310,14 +311,18 @@ export class Agent {
 
     const args: string[] = [
       "-p",
+      "--bare",
       "--output-format", "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
+      "--no-session-persistence",
       "--model", model,
+      "--fallback-model", "sonnet",
       "--max-budget-usd", String(claude.maxBudgetUsd),
       "--append-system-prompt", dynamicContext,
       "--allowed-tools", ...this.allowedTools,
       "--agents", JSON.stringify(this.agents),
+      "--add-dir", claude.workDir,
     ];
 
     if (sessionId) {

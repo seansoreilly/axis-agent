@@ -15,6 +15,8 @@ export interface PersistentProcessOpts {
   onActivity?: (event: ActivityEvent) => void;
   selfReview?: boolean;
   selfReviewCooldownMs?: number;
+  fallbackModel?: string;
+  name?: string;
 }
 
 export interface SendPromptOpts {
@@ -88,8 +90,13 @@ export class PersistentProcess {
       "--verbose",
       "--dangerously-skip-permissions",
       "--model", opts.model,
+      "--fallback-model", opts.fallbackModel ?? "sonnet",
       "--max-budget-usd", String(opts.maxBudgetUsd),
     ];
+
+    if (opts.name) {
+      args.push("--name", opts.name);
+    }
 
     if (opts.systemPrompt) {
       args.push("--append-system-prompt", opts.systemPrompt);
@@ -115,6 +122,7 @@ export class PersistentProcess {
         ...process.env,
         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
         CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+        CLAUDE_CODE_DISABLE_CRON: "1",
         CLAUDE_STREAM_IDLE_TIMEOUT_MS: String((opts.maxBudgetUsd > 0 ? 600 : 90) * 1000 + 30_000),
       },
     });
@@ -487,6 +495,8 @@ export class ProcessManager {
       agents: this.opts.agents,
       onActivity,
       selfReview: this.opts.selfReview,
+      fallbackModel: "sonnet",
+      name: `user-${userId}`,
     });
 
     this.processes.set(userId, proc);

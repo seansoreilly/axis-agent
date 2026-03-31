@@ -408,7 +408,7 @@ scripts/
   bitwarden/            # Secret management via Bitwarden vault
   google-calendar/      # Google Calendar integration
   gws/                  # Google Workspace CLI — contacts, calendar, gmail, drive, sheets
-  review-claude-code/   # Review SDK/CLI updates and identify refactoring opportunities
+  review-cc-updates/    # Review SDK/CLI updates and identify refactoring opportunities
   skill-generator/      # Meta-skill: structured template + learning log for creating new skills
 .github/
   dependabot.yml        # Weekly Dependabot for npm (groups patch+minor, major separate)
