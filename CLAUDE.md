@@ -43,11 +43,22 @@ Axis Agent — always-on AI agent powered by the **Claude Code CLI** (`claude`) 
 - `SqliteStore` (`src/persistence.ts`) — SQLite via `node:sqlite` (Node 22+ built-in). Sessions, tasks, jobs, events.
 - `Auth` (`src/auth.ts`) — OAuth token refresh for `~/.claude/.credentials.json`.
 
+**Reliability:**
+- `Checkpoint` (`src/checkpoint.ts`) — conversation state snapshots for crash recovery.
+- `CircuitBreaker` (`src/circuit-breaker.ts`) — closed/open/half-open circuit for failing external calls.
+- `Heartbeat` (`src/heartbeat.ts`) — periodic liveness signals, writes to filesystem.
+- `Watchdog` (`src/watchdog.ts`) — monitors health checks, triggers alerts on failure.
+- `Logger` (`src/logger.ts`) — structured logging with component prefixes.
+- `Preflight` (`src/preflight.ts`) — startup validation (CLI exists, credentials valid, paths writable).
+
 **Integrations:**
 - `TrelloMcpServer` (`src/trello-mcp-server.ts`) — MCP server for Trello API. Configured in `.mcp.json`.
 - `VoiceService` (`src/voice.ts`) — outbound calls via Retell.ai SDK.
 - `TeamCoordinator` (`src/team-coordinator.ts`) — parallel fan-out/fan-in for specialized agents (research, reasoning, explore).
 - `MetricsRegistry` (`src/metrics.ts`) — in-memory counters and gauges.
+- `GwsAuth` (`src/gws-auth.ts`) — Google Workspace OAuth token management and health checks.
+- `PromptConfig` (`src/prompt-config.ts`) — structured prompt section builder for system prompts.
+- `Identity` (`src/identity.ts`) — persistent agent identity file management.
 
 **Config** (`src/config.ts`): Required: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`. See `.env.example` for all options.
 
