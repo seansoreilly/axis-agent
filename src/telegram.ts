@@ -512,6 +512,7 @@ export class TelegramIntegration {
       const state = this.getState(userId);
       state.messageQueue = [];
       this.userSessions.delete(userId);
+      this.agent.resetSession(userId);
       await this.bot.sendMessage(chatId, "Session cleared. Starting fresh.");
     } else if (data.startsWith("model:")) {
       const modelKey = data.substring(6);

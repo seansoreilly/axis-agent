@@ -91,7 +91,7 @@ export function writeGwsCredentials(refreshToken: string): void {
     refresh_token: refreshToken,
   };
 
-  writeFileSync(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+  writeFileSync(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2), { mode: 0o600 });
   info("gws-auth", "Credentials written to " + CREDENTIALS_PATH);
 }
 

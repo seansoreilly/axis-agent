@@ -110,7 +110,7 @@ export class Scheduler {
   private taskDefs: Map<string, ScheduledTask> = new Map();
   private onResult?: TaskCallback;
   private store: SqliteStore;
-  private running = false;
+  private runningTasks = new Set<string>();
   private jobs: JobService;
 
   constructor(agent: Agent, onResult?: TaskCallback, persistDir?: string, jobs?: JobService) {
@@ -193,11 +193,11 @@ export class Scheduler {
       const scheduled = cron.schedule(
         task.schedule,
         async () => {
-          if (this.running) {
-            info("scheduler", `Skipping task ${task.id} — another task is running`);
+          if (this.runningTasks.has(task.id)) {
+            info("scheduler", `Skipping task ${task.id} — same task is already running`);
             return;
           }
-          this.running = true;
+          this.runningTasks.add(task.id);
           try {
             // Monitor mode: run check command first, skip if no output
             let prompt = task.prompt;
@@ -225,7 +225,7 @@ export class Scheduler {
             info("scheduler", `Task ${task.id} completed via job ${job.id}`);
             this.onResult?.(task.id, text);
           } finally {
-            this.running = false;
+            this.runningTasks.delete(task.id);
           }
         },
         { timezone: "Australia/Melbourne" }

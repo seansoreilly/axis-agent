@@ -107,6 +107,8 @@ export async function createGateway(
           return reply.status(401).send({ error: "unauthorized" });
         }
       });
+    } else {
+      info("gateway", "GATEWAY_API_TOKEN not set — protected routes are unauthenticated (relying on network-level access control)");
     }
 
     protectedApp.post<{ Body: WebhookBody }>("/webhook", {
@@ -299,19 +301,20 @@ ${status.valid ? "<p>Token is working. No action needed.</p>" : `
       }
     });
 
+    // Form-urlencoded parser (needed by /admin/gws-auth POST and Twilio SMS)
+    protectedApp.addContentTypeParser(
+      "application/x-www-form-urlencoded",
+      { parseAs: "string" },
+      (_req, body, done) => {
+        const params = new URLSearchParams(body as string);
+        const result: Record<string, string> = {};
+        params.forEach((value, key) => { result[key] = value; });
+        done(null, result);
+      }
+    );
+
     // Twilio inbound SMS webhook (only if callback is configured)
     if (opts.onInboundSms) {
-      protectedApp.addContentTypeParser(
-        "application/x-www-form-urlencoded",
-        { parseAs: "string" },
-        (_req, body, done) => {
-          const params = new URLSearchParams(body as string);
-          const result: Record<string, string> = {};
-          params.forEach((value, key) => { result[key] = value; });
-          done(null, result);
-        }
-      );
-
       protectedApp.post<{ Body: TwilioSmsBody }>("/twilio/inbound-sms", async (request, reply) => {
         const from = request.body?.From ?? "unknown";
         const body = request.body?.Body ?? "";
