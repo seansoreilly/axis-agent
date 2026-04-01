@@ -66,6 +66,7 @@ function spawnClaude(args: string[], opts: {
         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
         CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
         CLAUDE_CODE_DISABLE_CRON: "1",
+        MCP_CONNECTION_NONBLOCKING: "true",
         CLAUDE_STREAM_IDLE_TIMEOUT_MS: String(opts.timeoutMs + 30_000),
       },
     });
