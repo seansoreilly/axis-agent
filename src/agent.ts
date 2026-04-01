@@ -47,6 +47,7 @@ function spawnClaude(args: string[], opts: {
   cwd: string;
   signal?: AbortSignal;
   timeoutMs: number;
+  stdin?: string;
 }): Promise<{ resultText: string; sessionId: string; durationMs: number; totalCostUsd: number; isError: boolean; isTimeout: boolean }> {
   return new Promise((resolve, reject) => {
     let resultText = "";
@@ -70,6 +71,12 @@ function spawnClaude(args: string[], opts: {
         CLAUDE_STREAM_IDLE_TIMEOUT_MS: String(opts.timeoutMs + 30_000),
       },
     });
+
+    // Write prompt via stdin to avoid variadic CLI flags consuming it
+    if (opts.stdin) {
+      proc.stdin.write(opts.stdin);
+      proc.stdin.end();
+    }
 
     const timeoutId = setTimeout(() => {
       killed = true;
@@ -145,6 +152,37 @@ function spawnClaude(args: string[], opts: {
     proc.on("close", (code) => {
       clearTimeout(timeoutId);
       opts.signal?.removeEventListener("abort", onAbort);
+
+      // Process any remaining buffered data
+      if (buffer.trim()) {
+        try {
+          const msg: StreamMessage = JSON.parse(buffer);
+          if (msg.type === "result") {
+            if (msg.session_id) sessionId = msg.session_id;
+            durationMs = msg.duration_ms ?? 0;
+            totalCostUsd = msg.total_cost_usd ?? 0;
+            if (msg.subtype === "success" && !msg.is_error) {
+              resultText = msg.result ?? resultText;
+            } else {
+              isError = true;
+              if (msg.result) resultText = msg.result;
+              else if (msg.errors?.length) resultText = `Error: ${msg.errors.join(", ")}`;
+            }
+          } else if (msg.type === "assistant" && msg.message?.content) {
+            for (const block of msg.message.content) {
+              if (typeof block === "object" && "type" in block && block.type === "text" && block.text) {
+                resultText = block.text;
+              }
+            }
+          }
+        } catch {
+          // Not valid JSON
+        }
+      }
+
+      if (!resultText) {
+        logError("agent", `spawnClaude: no resultText captured (exit code: ${code}, stderr: ${stderrOutput.substring(0, 500)})`);
+      }
 
       if (killed && isTimeout) {
         resolve({
@@ -320,7 +358,7 @@ export class Agent {
       "--fallback-model", "sonnet",
       "--max-budget-usd", String(claude.maxBudgetUsd),
       "--append-system-prompt", dynamicContext,
-      "--allowed-tools", ...this.allowedTools,
+      "--allowed-tools", this.allowedTools.join(","),
       "--agents", JSON.stringify(this.agents),
       "--add-dir", claude.workDir,
     ];
@@ -329,8 +367,6 @@ export class Agent {
       args.push("--resume", sessionId);
     }
 
-    args.push(prompt);
-
     await ensureValidToken();
 
     try {
@@ -338,6 +374,7 @@ export class Agent {
         cwd: claude.workDir,
         signal,
         timeoutMs,
+        stdin: prompt,
       });
 
       return {
