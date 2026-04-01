@@ -7,21 +7,21 @@
 CREDS="$HOME/.config/gws/credentials.json"
 
 if [ ! -f "$CREDS" ]; then
-  echo "gws credentials file not found at $CREDS"
+  echo "gws OAuth config is missing. Re-authentication required via /admin/gws-auth endpoint."
   exit 0
 fi
 
-# Check that the credentials file contains OAuth user credentials, not a service account
+# Check that the file contains OAuth user type, not a service account
 cred_type=$(python3 -c "import json; print(json.load(open('$CREDS')).get('type',''))" 2>/dev/null)
 if [ "$cred_type" != "authorized_user" ]; then
-  echo "CRITICAL: gws credentials file has wrong type '$cred_type' (expected 'authorized_user'). The file may have been overwritten with a service account key. Re-authentication required."
+  echo "CRITICAL: gws OAuth config has wrong type '$cred_type' (expected 'authorized_user'). May have been overwritten with a service account key. Re-authentication required."
   exit 0
 fi
 
 # Verify refresh_token exists
 has_refresh=$(python3 -c "import json; d=json.load(open('$CREDS')); print('yes' if d.get('refresh_token') else 'no')" 2>/dev/null)
 if [ "$has_refresh" != "yes" ]; then
-  echo "gws credentials file is missing refresh_token. Re-authentication required."
+  echo "gws OAuth config is missing refresh_token. Re-authentication required."
   exit 0
 fi
 
@@ -34,5 +34,6 @@ if echo "$result" | grep -q '"emailAddress"'; then
 else
   # Token is invalid — return error so the agent gets alerted
   echo "gws OAuth token is invalid or expired. Error: $result"
+  echo "Notify the user to re-authenticate via the /admin/gws-auth gateway endpoint."
   exit 0
 fi
