@@ -312,7 +312,6 @@ export class Agent {
 
     const args: string[] = [
       "-p",
-      "--bare",
       "--output-format", "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
