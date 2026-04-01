@@ -122,6 +122,10 @@ Headless Chromium via [@playwright/mcp](https://github.com/microsoft/playwright-
 
 Up-to-date library documentation lookup via [@upstash/context7-mcp](https://github.com/upstash/context7). Resolves library names to Context7-compatible IDs and fetches current docs and examples on demand, avoiding reliance on potentially outdated training data.
 
+#### Gemini MCP (Multimodal AI)
+
+Google Gemini integration via [@fre4x/gemini](https://www.npmjs.com/package/@fre4x/gemini). Provides multimodal analysis (text, images, video), image generation via Imagen, and video generation via Veo. Requires `GEMINI_API_KEY`.
+
 ### Memory System
 - Claude Code native auto-memory — facts are written to `~/.claude/projects/.../memory/` automatically
 - The agent proactively saves personal info, preferences, work context, key decisions, and corrections

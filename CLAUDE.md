@@ -104,6 +104,7 @@ Configured in `.mcp.json` (auto-loaded from cwd):
 - **Trello** (`dist/trello-mcp-server.js`) — board/card/checklist management. Requires `TRELLO_API_KEY`, `TRELLO_API_TOKEN`.
 - **Playwright** (`@playwright/mcp`) — headless Chromium browser automation.
 - **Context7** (`@upstash/context7-mcp`) — library documentation lookup.
+- **Gemini** (`@fre4x/gemini`) — multimodal analysis, image generation (Imagen), video generation (Veo). Requires `GEMINI_API_KEY`.
 
 ## Google Operations
 
