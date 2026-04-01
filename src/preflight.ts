@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { info, error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 import { tokenNeedsRefresh } from "./auth.js";
 
 interface PreflightResult {
@@ -107,7 +108,7 @@ export async function preflight(opts: {
     checks.push({
       name: "telegram-api-reachable",
       passed: false,
-      message: `Cannot reach Telegram API: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Cannot reach Telegram API: ${errorMessage(err)}`,
     });
   }
 
@@ -139,7 +140,7 @@ export async function preflight(opts: {
     checks.push({
       name: "gws-contacts",
       passed: false,
-      message: `gws CLI not reachable: ${err instanceof Error ? err.message : String(err)}`,
+      message: `gws CLI not reachable: ${errorMessage(err)}`,
     });
   }
 

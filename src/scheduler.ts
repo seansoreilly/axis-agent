@@ -3,6 +3,7 @@ import cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import type { Agent } from "./agent.js";
 import { info, error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 import { SqliteStore } from "./persistence.js";
 import type { JobService } from "./jobs.js";
 
@@ -132,7 +133,7 @@ export class Scheduler {
       }
       info("scheduler", `Loaded ${saved.length} task(s) from disk`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logError("scheduler", `Failed to load tasks from disk: ${msg}`);
     }
   }
@@ -143,7 +144,7 @@ export class Scheduler {
         this.store.upsertTask(task);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logError("scheduler", `Failed to save tasks to disk: ${msg}`);
     }
   }
@@ -280,7 +281,7 @@ export class Scheduler {
       info("scheduler", `Manual task ${task.id} completed via job ${job.id}`);
       this.onResult?.(task.id, text);
     }).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logError("scheduler", `Manual task ${task.id} failed: ${msg}`);
       this.onResult?.(task.id, `Task failed: ${msg}`);
     });

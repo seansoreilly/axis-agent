@@ -7,6 +7,7 @@ import rateLimit from "@fastify/rate-limit";
 import type { Agent } from "./agent.js";
 import type { Scheduler, ScheduledTask } from "./scheduler.js";
 import { info, error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 import type { JobService } from "./jobs.js";
 import { metrics } from "./metrics.js";
 import { type SqliteStore } from "./persistence.js";
@@ -168,7 +169,7 @@ export async function createGateway(
       try {
         scheduler.add(task);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return reply.status(400).send({ error: message });
       }
       return { ok: true, task };
@@ -187,7 +188,7 @@ export async function createGateway(
         const jobId = scheduler.runNow(request.params.id);
         return { ok: true, jobId };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         const status = message.includes("not found") ? 404 : 400;
         return reply.status(status).send({ error: message });
       }
@@ -303,7 +304,7 @@ ${status.valid ? "<p>Token is working. No action needed.</p>" : `
 <p><a href="/admin/gws-auth">Back to status</a></p>
 </body></html>`;
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         logError("gateway", `gws OAuth exchange failed: ${message}`);
         return reply.status(400).send({ error: message });
       }

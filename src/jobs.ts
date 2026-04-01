@@ -4,6 +4,7 @@ import { metrics } from "./metrics.js";
 import { type JobRecord, SqliteStore } from "./persistence.js";
 import { error as logError, info } from "./logger.js";
 import { checkPromptForSensitiveFiles, logBlockedCommand } from "./policies.js";
+import { errorMessage, nowIso } from "./utils.js";
 
 export interface PromptJobPayload {
   prompt: string;
@@ -15,10 +16,6 @@ export interface PromptJobPayload {
 export interface JobServiceOptions {
   store: SqliteStore;
   agent: Pick<Agent, "run">;
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
 }
 
 export class JobService {
@@ -195,7 +192,7 @@ export class JobService {
       metrics.increment(result.isError ? "jobs.failed" : "jobs.succeeded");
       this.notifyWaiters(job);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       logError("jobs", `Job ${job.id} failed: ${message}`);
       if (job.attempts < job.maxAttempts) {
         job.status = "queued";

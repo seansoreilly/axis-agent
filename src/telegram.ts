@@ -12,6 +12,7 @@ import { TelegramMediaService } from "./telegram-media.js";
 import { TelegramProgressReporter } from "./telegram-progress.js";
 import { renderCommandHelp } from "./telegram-commands.js";
 import { metrics } from "./metrics.js";
+import { errorMessage } from "./utils.js";
 
 const MAX_MESSAGE_LENGTH = 4096;
 const RESPONSE_TIME_HISTORY = 20; // Track last N response times for ETA
@@ -119,7 +120,7 @@ export class TelegramIntegration {
   start(): void {
     this.bot.on("message", (msg) => {
       this.handleMessage(msg).catch((err) => {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = errorMessage(err);
         logError("telegram", `Failed to handle message: ${errMsg}`);
       });
     });
@@ -127,14 +128,14 @@ export class TelegramIntegration {
     // Live location updates arrive as edited messages
     this.bot.on("edited_message", (msg) => {
       this.handleLocationUpdate(msg).catch((err) => {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = errorMessage(err);
         logError("telegram", `Failed to handle edited message: ${errMsg}`);
       });
     });
 
     this.bot.on("callback_query", (query) => {
       this.handleCallbackQuery(query).catch((err) => {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = errorMessage(err);
         logError("telegram", `Failed to handle callback: ${errMsg}`);
       });
     });
@@ -403,7 +404,7 @@ export class TelegramIntegration {
           isError: result.isError,
           model: model ?? "unknown",
         }).catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = errorMessage(err);
           logError("telegram", `Reflection failed: ${msg}`);
         });
       }
@@ -411,7 +412,7 @@ export class TelegramIntegration {
       await progress.stop();
       await this.sendResponse(chatId, result.text, result);
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = errorMessage(err);
       logError("telegram", `Agent run failed for user ${userId}: ${errMsg}`);
       metrics.increment("telegram.requests.failed");
       await progress.stop();
@@ -455,7 +456,7 @@ export class TelegramIntegration {
 
       // Drain queued messages — batch into a single prompt
       this.drainQueue(userId).catch((err) => {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = errorMessage(err);
         logError("telegram", `Failed to drain queue for user ${userId}: ${errMsg}`);
       });
     }
@@ -877,7 +878,7 @@ export class TelegramIntegration {
               );
             }
           } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
+            const errMsg = errorMessage(err);
             await this.bot.sendMessage(chatId, `Call failed: ${errMsg}`);
           }
         } else {
@@ -959,7 +960,7 @@ export class TelegramIntegration {
         });
         await this.bot.sendMessage(chatId, `Scheduled task "${id}" with cron: ${cronExpr}`);
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = errorMessage(err);
         await this.bot.sendMessage(chatId, `Failed: ${errMsg}`);
       }
       return;
@@ -999,7 +1000,7 @@ export class TelegramIntegration {
           `Task "${id}" ${subcommand === "enable" ? "enabled" : "disabled"}.`
         );
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = errorMessage(err);
         await this.bot.sendMessage(chatId, `Failed: ${errMsg}`);
       }
       return;

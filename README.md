@@ -383,9 +383,7 @@ src/
   voice.ts              # Voice calling service (Retell.ai SDK, call monitoring)
   identity.ts           # Granular identity files (SOUL.md, USER.md, TOOLS.md) loader and composer
   transcript.ts         # JSONL session transcript logger (append, search, export)
-  checkpoint.ts         # Save/restore interrupted agent runs (per-user, with expiry and pruning)
-  circuit-breaker.ts    # Circuit breaker pattern for external service calls (closed/open/half-open)
-  heartbeat.ts          # Periodic heartbeat checks with file-based item tracking
+  utils.ts              # Shared utilities (errorMessage, nowIso, requireEnv)
   watchdog.ts           # Health watchdog with pluggable checks and severity levels
   reflection.ts         # Post-task reflection service (cost/duration analysis, insights logging)
 workspace-CLAUDE.md     # Static agent instructions deployed to workDir (auto-loaded by Claude Code)

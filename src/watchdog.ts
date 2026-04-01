@@ -1,6 +1,3 @@
-import type { SqliteStore } from "./persistence.js";
-import type { MetricsRegistry } from "./metrics.js";
-
 export interface HealthCheck {
   name: string;
   severity: "warning" | "critical";
@@ -110,58 +107,3 @@ export class HealthWatchdog {
   }
 }
 
-// --- Factory functions ---
-
-export function memoryCheck(maxHeapMb: number): HealthCheck {
-  return {
-    name: "memory",
-    severity: "warning",
-    check: (): HealthCheckResult => {
-      const heapUsed = process.memoryUsage().heapUsed;
-      const heapMb = Math.round(heapUsed / 1024 / 1024);
-      const healthy = heapMb <= maxHeapMb;
-      return {
-        healthy,
-        detail: `Heap: ${heapMb} MB / ${maxHeapMb} MB`,
-      };
-    },
-  };
-}
-
-export function jobQueueCheck(store: SqliteStore): HealthCheck {
-  return {
-    name: "job_queue",
-    severity: "critical",
-    check: (): HealthCheckResult => {
-      const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const stuck = store.getStuckJobs(cutoff);
-      const healthy = stuck.length === 0;
-      return {
-        healthy,
-        detail: healthy ? "No stuck jobs" : `${stuck.length} stuck job(s)`,
-      };
-    },
-  };
-}
-
-export function errorRateCheck(metricsRegistry: MetricsRegistry, threshold: number): HealthCheck {
-  return {
-    name: "error_rate",
-    severity: "warning",
-    check: (): HealthCheckResult => {
-      const snap = metricsRegistry.snapshot();
-      const errors = snap.counters["agent.errors"] ?? 0;
-      const requests = snap.counters["agent.requests"] ?? 0;
-      if (requests === 0) {
-        return { healthy: true, detail: "No requests yet" };
-      }
-      const rate = errors / requests;
-      const pct = Math.round(rate * 100);
-      const healthy = rate <= threshold;
-      return {
-        healthy,
-        detail: `Error rate: ${pct}% (${errors}/${requests}), threshold: ${Math.round(threshold * 100)}%`,
-      };
-    },
-  };
-}

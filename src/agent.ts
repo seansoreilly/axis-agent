@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Config } from "./config.js";
 import type { SqliteStore } from "./persistence.js";
 import { error as logError, info, createLogger } from "./logger.js";
+import { errorMessage } from "./utils.js";
 import { ensureValidToken } from "./auth.js";
 import { DynamicContextBuilder } from "./dynamic-context.js";
 import { ProcessManager } from "./persistent-process.js";
@@ -325,7 +326,7 @@ export class Agent {
         isTimeout: result.isTimeout,
       };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = errorMessage(error);
       if (/dead|crash|exited|timed out|startup/i.test(msg)) {
         info("agent", `Persistent process failed for user ${userId}, falling back to one-shot: ${msg}`);
         this.processManager.reset(userId);
@@ -386,7 +387,7 @@ export class Agent {
         isTimeout: result.isTimeout,
       };
     } catch (error) {
-      return this.makeErrorResult(error instanceof Error ? error.message : String(error));
+      return this.makeErrorResult(errorMessage(error));
     }
   }
 

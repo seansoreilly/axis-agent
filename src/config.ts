@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
+import { requireEnv } from "./utils.js";
 
 export interface RetellConfig {
   apiKey: string;
@@ -26,14 +27,6 @@ export interface Config {
   owntracksToken?: string;
   gatewayApiToken?: string;
   retell?: RetellConfig;
-}
-
-function requireEnv(key: string): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
 }
 
 export function loadConfig(): Config {

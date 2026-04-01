@@ -1,5 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { info, error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 import { metrics } from "./metrics.js";
 
 const COMPONENT = "reflection";
@@ -91,7 +92,7 @@ export class ReflectionService {
         parsed = ReflectionService.parseReflection(response.text);
       }
     } catch (err) {
-      logError(COMPONENT, `Reflection agent threw: ${err instanceof Error ? err.message : String(err)}`);
+      logError(COMPONENT, `Reflection agent threw: ${errorMessage(err)}`);
       parsed = { assessment: "acceptable", insights: [] };
     }
 
@@ -113,7 +114,7 @@ export class ReflectionService {
       try {
         appendFileSync(this.storePath, JSON.stringify(result) + "\n");
       } catch (err) {
-        logError(COMPONENT, `Failed to write reflection: ${err instanceof Error ? err.message : String(err)}`);
+        logError(COMPONENT, `Failed to write reflection: ${errorMessage(err)}`);
       }
     }
 

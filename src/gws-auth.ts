@@ -2,16 +2,11 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { homedir } from "node:os";
 import { info, error as logError } from "./logger.js";
-
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required env var: ${name}`);
-  return value;
-}
+import { errorMessage, requireEnv } from "./utils.js";
 
 const GWS_OAUTH = {
-  get clientId(): string { return requiredEnv("GWS_OAUTH_CLIENT_ID"); },
-  get clientSecret(): string { return requiredEnv("GWS_OAUTH_CLIENT_SECRET"); },
+  get clientId(): string { return requireEnv("GWS_OAUTH_CLIENT_ID"); },
+  get clientSecret(): string { return requireEnv("GWS_OAUTH_CLIENT_SECRET"); },
   tokenEndpoint: "https://oauth2.googleapis.com/token",
   scopes: [
     "https://www.googleapis.com/auth/contacts.readonly",
@@ -143,7 +138,7 @@ export async function testGwsToken(): Promise<GwsTokenStatus> {
 
     return { valid: true };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     logError("gws-auth", `Token test failed: ${message}`);
     return { valid: false, error: message };
   }

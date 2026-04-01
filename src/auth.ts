@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { info, error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 
 const CREDENTIALS_PATH = join(homedir(), ".claude", ".credentials.json");
 const TOKEN_ENDPOINT = "https://platform.claude.com/v1/oauth/token";
@@ -102,7 +103,7 @@ export async function refreshAccessToken(): Promise<boolean> {
     info("auth", `Token refreshed successfully. Expires in ${expiresInHrs}h`);
     return true;
   } catch (err) {
-    logError("auth", `Token refresh error: ${err instanceof Error ? err.message : String(err)}`);
+    logError("auth", `Token refresh error: ${errorMessage(err)}`);
     return false;
   }
 }

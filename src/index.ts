@@ -5,6 +5,7 @@ import { Scheduler } from "./scheduler.js";
 import { TelegramIntegration } from "./telegram.js";
 import { createGateway } from "./gateway.js";
 import { info, error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 import { ensureValidToken, startTokenRefreshTimer } from "./auth.js";
 import { SqliteStore } from "./persistence.js";
 import { JobService } from "./jobs.js";
@@ -64,7 +65,7 @@ async function main(): Promise<void> {
             `Scheduled task [${taskId}]:\n${result}`
           )
           .catch((err) => {
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = errorMessage(err);
             logError("scheduler", `Failed to send notification: ${msg}`);
           });
       }
@@ -99,7 +100,7 @@ async function main(): Promise<void> {
         telegram
           .sendNotification(primaryUser, msg)
           .catch((err) => {
-            const errMsg = err instanceof Error ? err.message : String(err);
+            const errMsg = errorMessage(err);
             logError("voice", `Failed to send call notification: ${errMsg}`);
           });
       }
@@ -139,7 +140,7 @@ async function main(): Promise<void> {
         telegram
           .sendNotification(primaryUser, `📱 SMS from ${from}:\n${body}`)
           .catch((err) => {
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = errorMessage(err);
             logError("gateway", `Failed to forward SMS notification: ${msg}`);
           });
       }
@@ -182,7 +183,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   logError("main", `Fatal: ${msg}`);
   process.exit(1);
 });

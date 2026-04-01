@@ -1,6 +1,7 @@
 import Retell from "retell-sdk";
 import type { RetellConfig } from "./config.js";
 import { info, error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 
 export interface VoiceCallRequest {
   phoneNumber: string; // E.164 format
@@ -120,7 +121,7 @@ export class VoiceService {
       return result;
     } catch (err) {
       this.activeCalls.delete(callId);
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = errorMessage(err);
       logError("voice", `Failed to initiate call ${callId}: ${errMsg}`);
 
       const result: VoiceCallResult = {
@@ -341,7 +342,7 @@ export class VoiceService {
           this.onCallStatus?.(callId, result.status, result);
         }
       } catch (err) {
-        logError("voice", `Call ${callId} poll error: ${err instanceof Error ? err.message : String(err)}`);
+        logError("voice", `Call ${callId} poll error: ${errorMessage(err)}`);
       }
     }, 5000);
 

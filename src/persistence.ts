@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, chmodSync } from "node:fs"
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ScheduledTask } from "./scheduler.js";
+import { nowIso } from "./utils.js";
 
 export interface SessionRecord {
   sessionId: string;
@@ -31,10 +32,6 @@ export interface JobRecord {
 }
 
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
 
 interface LegacySession {
   sessionId: string;

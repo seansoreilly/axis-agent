@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import TelegramBot from "node-telegram-bot-api";
 import { error as logError } from "./logger.js";
+import { errorMessage } from "./utils.js";
 
 export class TelegramMediaService {
   constructor(
@@ -15,7 +16,7 @@ export class TelegramMediaService {
       const response = await fetch(this.fileUrl(file.file_path));
       return await response.text();
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = errorMessage(err);
       logError("telegram", `Failed to download file: ${errMsg}`);
       return null;
     }
@@ -29,7 +30,7 @@ export class TelegramMediaService {
       const buffer = Buffer.from(await response.arrayBuffer());
       return { buffer, path: file.file_path };
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = errorMessage(err);
       logError("telegram", `Failed to download file: ${errMsg}`);
       return null;
     }
