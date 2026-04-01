@@ -32,8 +32,8 @@ if echo "$result" | grep -q '"emailAddress"'; then
   # Token is valid — return empty stdout so the monitor task is skipped
   exit 0
 else
-  # Token is invalid — return error so the agent gets alerted
-  echo "gws OAuth token is invalid or expired. Error: $result"
-  echo "Notify the user to re-authenticate via the /admin/gws-auth gateway endpoint."
+  # Token is invalid — return a sanitised message (raw gws output may contain
+  # file paths that trigger the sensitive-file policy and block the job).
+  echo "gws OAuth token is invalid or expired. Notify the user to re-authenticate via the /admin/gws-auth gateway endpoint."
   exit 0
 fi
