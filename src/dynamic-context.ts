@@ -105,7 +105,7 @@ export class DynamicContextBuilder {
     return [
       "## Scheduled Tasks",
       "These tasks run automatically on their cron schedules. To trigger one manually:",
-      '  curl -s -X POST http://localhost:8080/tasks/<id>/run -H "Content-Type: application/json"',
+      '  curl -s -X POST http://localhost:8080/tasks/<id>/run -H "Content-Type: application/json" -H "Authorization: Bearer $GATEWAY_API_TOKEN"',
       "",
       ...lines,
     ].join("\n");

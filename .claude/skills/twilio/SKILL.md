@@ -1,5 +1,5 @@
 ---
-name: Twilio
+name: twilio
 description: Send SMS and manage phone numbers via Twilio (AU1 region, headless-compatible)
 tags: [twilio, sms, phone]
 ---

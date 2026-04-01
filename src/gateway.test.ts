@@ -246,7 +246,7 @@ describe("Gateway", () => {
     expect(agent.run).not.toHaveBeenCalled();
   });
 
-  it("allows access without auth when GATEWAY_API_TOKEN is not set", async () => {
+  it("rejects access with 403 when GATEWAY_API_TOKEN is not set", async () => {
     const { app: a, agent } = await createTestGateway();
     app = a;
 
@@ -255,8 +255,8 @@ describe("Gateway", () => {
       url: "/webhook",
       payload: { prompt: "hello" },
     });
-    expect(webhook.statusCode).toBe(200);
-    expect(agent.run).toHaveBeenCalled();
+    expect(webhook.statusCode).toBe(403);
+    expect(agent.run).not.toHaveBeenCalled();
   });
 
   it("returns 202 with jobId when JobService is configured (async webhook)", async () => {
@@ -297,12 +297,13 @@ describe("Gateway", () => {
   });
 
   it("returns 200 with direct result when no JobService (fallback)", async () => {
-    const { app: a, agent } = await createTestGateway();
+    const { app: a, agent } = await createTestGateway({ gatewayApiToken: TEST_TOKEN });
     app = a;
 
     const webhook = await app.inject({
       method: "POST",
       url: "/webhook",
+      headers: authHeader(),
       payload: { prompt: "direct" },
     });
 

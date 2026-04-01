@@ -61,15 +61,24 @@ export class JobService {
     }
 
     return new Promise<JobRecord>((resolve, reject) => {
+      const callback = (job: JobRecord): void => {
+        clearTimeout(timeout);
+        resolve(job);
+      };
+
       const timeout = setTimeout(() => {
+        // Remove this callback from waiters
+        const list = this.waiters.get(id);
+        if (list) {
+          const idx = list.indexOf(callback);
+          if (idx >= 0) list.splice(idx, 1);
+          if (list.length === 0) this.waiters.delete(id);
+        }
         reject(new Error(`Timed out waiting for job ${id}`));
       }, timeoutMs);
 
       const list = this.waiters.get(id) ?? [];
-      list.push((job) => {
-        clearTimeout(timeout);
-        resolve(job);
-      });
+      list.push(callback);
       this.waiters.set(id, list);
     });
   }
@@ -162,10 +171,18 @@ export class JobService {
       });
       job.resultText = result.text;
       job.resultSessionId = result.sessionId || undefined;
-      job.status = result.isError ? "failed" : "succeeded";
       if (result.isError) {
         job.errorText = result.text;
+        if (job.attempts < job.maxAttempts) {
+          job.status = "queued";
+          job.updatedAt = nowIso();
+          job.runAfter = new Date(Date.now() + job.attempts * 5_000).toISOString();
+          this.opts.store.updateJob(job);
+          this.opts.store.addEvent("job_requeued", { jobId: job.id, attempts: job.attempts });
+          return;
+        }
       }
+      job.status = result.isError ? "failed" : "succeeded";
       job.finishedAt = nowIso();
       job.updatedAt = nowIso();
       this.opts.store.updateJob(job);

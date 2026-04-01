@@ -220,7 +220,7 @@ export class Scheduler {
               source: "scheduler",
               metadata: { taskId: task.id, taskName: task.name },
             });
-            const completed = await this.jobs.waitForCompletion(job.id);
+            const completed = await this.jobs.waitForCompletion(job.id, 10 * 60 * 1000);
             const text = completed.resultText ?? completed.errorText ?? "Task completed.";
             info("scheduler", `Task ${task.id} completed via job ${job.id}`);
             this.onResult?.(task.id, text);

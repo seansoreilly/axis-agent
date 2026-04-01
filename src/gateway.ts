@@ -108,7 +108,10 @@ export async function createGateway(
         }
       });
     } else {
-      info("gateway", "GATEWAY_API_TOKEN not set — protected routes are unauthenticated (relying on network-level access control)");
+      logError("gateway", "GATEWAY_API_TOKEN not set — all protected routes will reject requests. Set this env var to enable the gateway API.");
+      protectedApp.addHook("onRequest", async (_request, reply) => {
+        return reply.status(403).send({ error: "gateway API token not configured" });
+      });
     }
 
     protectedApp.post<{ Body: WebhookBody }>("/webhook", {
@@ -162,7 +165,12 @@ export async function createGateway(
         enabled: enabled ?? true,
       };
 
-      scheduler.add(task);
+      try {
+        scheduler.add(task);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.status(400).send({ error: message });
+      }
       return { ok: true, task };
     });
 

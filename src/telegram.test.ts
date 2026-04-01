@@ -1004,7 +1004,7 @@ describe("TelegramIntegration", () => {
       const agent = makeAgent();
       agent.run
         .mockResolvedValueOnce({ ...base, sessionId: "old-sess" })          // msg 1: establishes old-sess
-        .mockResolvedValueOnce({ ...base, sessionId: "", isError: true })    // msg 2: stale error
+        .mockResolvedValueOnce({ ...base, text: "session not found", sessionId: "", isError: true })    // msg 2: stale error
         .mockResolvedValueOnce({ ...base, sessionId: "new-sess" })          // msg 2 retry: establishes new-sess
         .mockResolvedValue({ ...base, sessionId: "new-sess" });             // msg 3
 

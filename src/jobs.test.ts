@@ -87,7 +87,7 @@ describe("JobService", () => {
     const agent = makeAgent({ text: "Something went wrong", isError: true, totalCostUsd: 0 });
 
     const jobs = new JobService({ store, agent: agent as Agent });
-    const job = jobs.enqueuePromptJob({ prompt: "fail", source: "webhook" });
+    const job = jobs.enqueuePromptJob({ prompt: "fail", source: "webhook" }, 1);
     const completed = await jobs.waitForCompletion(job.id);
 
     expect(completed.status).toBe("failed");

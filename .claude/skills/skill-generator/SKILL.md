@@ -1,5 +1,5 @@
 ---
-name: Skill Generator
+name: skill-generator
 description: Create new skills from conversation, with structured templates and validation
 tags: [meta, skills, self-improvement]
 ---

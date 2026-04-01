@@ -1,5 +1,5 @@
 ---
-name: Review Claude Code Updates
+name: review-claude-code
 description: Review latest Claude Code/SDK updates and identify refactoring opportunities to replace custom code with native features
 user_invocable: true
 tags: [maintenance, refactoring, sdk, self-improvement]

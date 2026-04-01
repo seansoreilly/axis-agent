@@ -1,5 +1,5 @@
 ---
-name: Facebook Page
+name: facebook
 description: Post text and photos to a Facebook Page using Graph API (headless-compatible)
 tags: [facebook, social-media]
 ---

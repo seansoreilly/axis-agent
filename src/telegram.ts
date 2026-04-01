@@ -349,8 +349,10 @@ export class TelegramIntegration {
         onActivity,
       });
 
-      // If the run failed with a session, retry without it (stale session recovery)
-      if (result.isError && sessionId && !abortController.signal.aborted) {
+      // If the run failed with a stale session, retry without it
+      const isStaleSession = result.isError && sessionId && !abortController.signal.aborted
+        && /stale|session.*not found|session.*expired|invalid session|could not resume/i.test(result.text);
+      if (isStaleSession) {
         info("telegram", `Retrying without session for user ${userId} (stale session)`);
         this.userSessions.delete(userId);
         result = await this.agent.run(text, { model, signal: abortController.signal, userId, onActivity });
@@ -442,9 +444,12 @@ export class TelegramIntegration {
       state.abortController = undefined;
       state.currentTaskStartMs = undefined;
 
-      // Clean up temp files (photos, voice messages)
+      // Clean up temp files, but keep files referenced by recentPhotos
+      const keepPaths = new Set(state.recentPhotos.map(p => p.path));
       for (const tmpPath of state.tempFiles) {
-        try { unlinkSync(tmpPath); } catch { /* already deleted */ }
+        if (!keepPaths.has(tmpPath)) {
+          try { unlinkSync(tmpPath); } catch { /* already deleted */ }
+        }
       }
       state.tempFiles = [];
 
@@ -641,7 +646,7 @@ export class TelegramIntegration {
         if (!modelKey) {
           const current = state.modelOverride
             ? Object.entries(VALID_MODELS).find(([, v]) => v === state.modelOverride)?.[0] ?? state.modelOverride
-            : "default (sonnet)";
+            : "default";
           await this.bot.sendMessage(chatId, `Current model: ${current}`, {
             reply_markup: {
               inline_keyboard: [
@@ -838,7 +843,7 @@ export class TelegramIntegration {
         if (!this.voiceService?.isAvailable()) {
           await this.bot.sendMessage(
             chatId,
-            "Voice calling is not configured. Set VAPI_API_KEY and VAPI_PHONE_NUMBER_ID in .env"
+            "Voice calling is not configured. Set RETELL_API_KEY, RETELL_PHONE_NUMBER, and RETELL_AGENT_ID in .env"
           );
           return;
         }

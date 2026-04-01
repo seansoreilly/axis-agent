@@ -33,7 +33,9 @@ export class HeartbeatService {
   start(): void {
     info(COMPONENT, `Starting heartbeat with interval ${this.opts.intervalMs}ms`);
     this.timer = setInterval(() => {
-      void this.runOnce();
+      this.runOnce().catch((err) => {
+        logError(COMPONENT, `Heartbeat run failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     }, this.opts.intervalMs);
   }
 

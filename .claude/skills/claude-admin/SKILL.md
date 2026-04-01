@@ -1,5 +1,5 @@
 ---
-name: Claude Code Admin
+name: claude-admin
 description: Manage Anthropic organization via Admin API (headless-compatible)
 tags: [anthropic, admin, api-keys, organization]
 ---

@@ -52,7 +52,8 @@ export function loadConfig(): Config {
   const allowedUsers = (process.env["TELEGRAM_ALLOWED_USERS"] ?? "")
     .split(",")
     .filter(Boolean)
-    .map(Number);
+    .map(Number)
+    .filter((n) => !Number.isNaN(n));
 
   if (allowedUsers.length === 0) {
     throw new Error(

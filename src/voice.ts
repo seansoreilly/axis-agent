@@ -340,8 +340,8 @@ export class VoiceService {
           );
           this.onCallStatus?.(callId, result.status, result);
         }
-      } catch {
-        // transient error, keep polling
+      } catch (err) {
+        logError("voice", `Call ${callId} poll error: ${err instanceof Error ? err.message : String(err)}`);
       }
     }, 5000);
 
@@ -350,12 +350,13 @@ export class VoiceService {
       clearInterval(pollInterval);
       if (this.activeCalls.has(callId)) {
         this.activeCalls.delete(callId);
-        info("voice", `Call ${callId} timed out`);
-        this.onCallStatus?.(callId, "completed", {
+        logError("voice", `Call ${callId} monitor timed out after 10 minutes`);
+        this.onCallStatus?.(callId, "failed", {
           callId,
           phoneNumber: activeCall.phoneNumber,
-          status: "completed",
-          durationSeconds: 600,
+          status: "failed",
+          durationSeconds: Math.round((Date.now() - activeCall.startedAt) / 1000),
+          error: "Call monitor timed out — call may still be active on provider side",
         });
       }
     }, 600_000);

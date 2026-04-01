@@ -1,5 +1,5 @@
 ---
-name: Review Claude Code CLI Features
+name: review-cc-updates
 description: Audit all current Claude Code CLI features against agent usage, implement improvements, test, commit, and deploy
 user_invocable: true
 tags: [maintenance, cli, self-improvement, automation]

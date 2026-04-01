@@ -68,6 +68,7 @@ export class PersistentProcess {
   private buffer = "";
   private currentResolve?: (result: PromptResult) => void;
   private currentResultText = "";
+  private promptGeneration = 0;
   private readyResolve?: () => void;
   private readyReject?: (err: Error) => void;
   private onActivity?: (event: ActivityEvent) => void;
@@ -107,7 +108,7 @@ export class PersistentProcess {
     }
 
     if (opts.allowedTools) {
-      args.push("--allowed-tools", ...opts.allowedTools);
+      args.push("--allowed-tools", opts.allowedTools.join(","));
     }
 
     if (opts.agents) {
@@ -172,6 +173,13 @@ export class PersistentProcess {
   }
 
   /**
+   * Update the activity callback (e.g. when reusing a process for a new request).
+   */
+  updateOnActivity(cb?: (event: ActivityEvent) => void): void {
+    this.onActivity = cb;
+  }
+
+  /**
    * Send a prompt to the persistent process.
    * Writes a JSON line to stdin, collects stream-json events until result.
    */
@@ -193,6 +201,8 @@ export class PersistentProcess {
 
     this._state = "busy";
     this.currentResultText = "";
+    this.promptGeneration++;
+    const generation = this.promptGeneration;
 
     return new Promise<PromptResult>((resolve) => {
       this.currentResolve = resolve;
@@ -262,9 +272,14 @@ export class PersistentProcess {
         opts.signal.addEventListener("abort", onAbort, { once: true });
       }
 
-      // Wrap resolve to clean up timeout/signal/maxRun
+      // Wrap resolve to clean up timeout/signal/maxRun and guard against stale results
       const originalResolve = this.currentResolve;
       this.currentResolve = (result: PromptResult) => {
+        // Discard stale results from a previous generation (Fix 1)
+        if (this.promptGeneration !== generation) {
+          info("persistent-process", `Discarding stale result from generation ${generation} (current: ${this.promptGeneration})`);
+          return;
+        }
         if (timeoutId) clearTimeout(timeoutId);
         if (maxRunId) clearTimeout(maxRunId);
         if (maxRunKillId) clearTimeout(maxRunKillId);
@@ -474,6 +489,7 @@ export class ProcessManager {
 
     if (existing && existing.state !== "dead" && existing.model === requestedModel) {
       this.lastActivity.set(userId, Date.now());
+      existing.updateOnActivity(onActivity);
       return existing;
     }
 
@@ -550,6 +566,10 @@ export class ProcessManager {
       const now = Date.now();
       for (const [userId, lastTime] of this.lastActivity) {
         if (now - lastTime > this.idleTimeoutMs) {
+          const proc = this.processes.get(userId);
+          if (proc?.state === "busy") {
+            continue; // Don't reap processes that are actively handling a prompt
+          }
           info("persistent-process", `Reaping idle process for user ${userId}`);
           this.reset(userId);
         }

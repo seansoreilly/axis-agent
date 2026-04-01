@@ -126,11 +126,13 @@ describe("Contract: gateway response shapes", () => {
       port: 0,
       agent,
       scheduler,
-      // No jobs, no gatewayApiToken — open access
+      gatewayApiToken: TOKEN,
+      // No jobs — sync fallback
     });
     const res = await app.inject({
       method: "POST",
       url: "/webhook",
+      headers: auth(),
       payload: { prompt: "sync test" },
     });
     expect(res.statusCode).toBe(200);
