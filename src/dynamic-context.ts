@@ -44,6 +44,10 @@ export class DynamicContextBuilder {
     const tasksContext = this.buildScheduledTasksContext();
     if (tasksContext) parts.push(tasksContext);
 
+    // Current location (from OwnTracks / Telegram)
+    const locationContext = await this.buildLocationContext();
+    if (locationContext) parts.push(locationContext);
+
     // Security policies (soft enforcement)
     parts.push(buildPolicyPromptSection());
 
@@ -89,6 +93,27 @@ export class DynamicContextBuilder {
         return `- [${entry.assessment}]${insightPart} (${date})`;
       });
       return `## Recent Task Reflections\n${summaries.join("\n")}`;
+    } catch {
+      return "";
+    }
+  }
+
+  private async buildLocationContext(): Promise<string> {
+    if (!this.workDir) return "";
+    try {
+      const raw = await readFile(join(this.workDir, "current-location.json"), "utf-8");
+      const loc = JSON.parse(raw) as {
+        lat: number;
+        lon: number;
+        accuracy?: number;
+        localTime?: string;
+        receivedAt?: string;
+      };
+      const age = loc.receivedAt
+        ? Math.round((Date.now() - new Date(loc.receivedAt).getTime()) / 60_000)
+        : null;
+      const agePart = age !== null ? ` (${age} min ago)` : "";
+      return `## Current Location\nCoordinates: ${loc.lat}, ${loc.lon} (accuracy: ${loc.accuracy ?? "?"}m)\nLast updated: ${loc.localTime ?? "unknown"}${agePart}`;
     } catch {
       return "";
     }
