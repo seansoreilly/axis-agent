@@ -70,6 +70,14 @@ function spawnClaude(args: string[], opts: {
         CLAUDE_CODE_DISABLE_CRON: "1",
         MCP_CONNECTION_NONBLOCKING: "true",
         CLAUDE_STREAM_IDLE_TIMEOUT_MS: String(opts.timeoutMs + 30_000),
+        DISABLE_AUTOUPDATER: "1",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        DISABLE_TELEMETRY: "1",
+        CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1",
+        CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1",
+        CLAUDE_ENABLE_STREAM_WATCHDOG: "1",
+        FALLBACK_FOR_ALL_PRIMARY_MODELS: "1",
+        DISABLE_ERROR_REPORTING: "1",
       },
     });
 
@@ -358,6 +366,7 @@ export class Agent {
       "--model", model,
       "--fallback-model", "sonnet",
       "--max-budget-usd", String(claude.maxBudgetUsd),
+      "--max-turns", String(claude.maxTurns),
       "--append-system-prompt", dynamicContext,
       "--allowed-tools", this.allowedTools.join(","),
       "--agents", JSON.stringify(this.agents),
